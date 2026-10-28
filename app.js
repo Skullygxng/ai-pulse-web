@@ -182,14 +182,14 @@ async function fetchResource(url, ms) {
 /// Direct first; a CORS-blocked or failed request falls back through public proxies.
 async function fetchText(url) {
   try {
-    const direct = await fetchResource(url, 6000);
+    const direct = await fetchResource(url, 4000);
     if (!direct.ok) throw new Error('HTTP ' + direct.status);
     return direct.body;
   } catch (directError) {
     let lastError = directError;
     for (const makeURL of PROXIES) {
       try {
-        const proxied = await fetchResource(makeURL(url), 10000);
+        const proxied = await fetchResource(makeURL(url), 7000);
         if (!proxied.ok) throw new Error('HTTP ' + proxied.status);
         return proxied.body;
       } catch (proxyError) {
@@ -740,64 +740,100 @@ function pruneRead() {
 
 // MARK: - Refresh
 
+// Fast, dependable sources paint first; Reddit and the X scrape come last.
+const SOURCE_PRIORITY = { hn: 0, hfPapers: 0, bluesky: 1, rss: 2, reddit: 3, x: 4 };
+
+function priorityValue(source) {
+  const value = SOURCE_PRIORITY[source.kind];
+  return typeof value === 'number' ? value : 2;
+}
+
+function mergeSources(sources, results, previousBySource) {
+  const now = new Date();
+  const merged = [];
+  const seenAddresses = new Set();
+  const seenTitles = new Set();
+  const refreshedStatus = {};
+
+  for (const source of sources) {
+    const result = results.get(source.id);
+    let sourceItems;
+    if (result && !result.error) {
+      sourceItems = result.items;
+      refreshedStatus[source.id] = { count: result.items.length, error: null, updatedAt: now.toISOString() };
+    } else if (result) {
+      // A source that fails keeps what it had, so a flaky request never empties the feed.
+      sourceItems = previousBySource[source.id] || [];
+      refreshedStatus[source.id] = {
+        count: sourceItems.length,
+        error: result.error,
+        updatedAt: (state.status[source.id] && state.status[source.id].updatedAt) || null
+      };
+    } else {
+      // Still in flight: keep showing what this source had.
+      sourceItems = previousBySource[source.id] || [];
+      refreshedStatus[source.id] = state.status[source.id] || { count: sourceItems.length, error: null, updatedAt: null };
+    }
+
+    for (const item of sourceItems) {
+      const address = dedupeKey(item);
+      const key = titleKey(item);
+      if (seenAddresses.has(address) || seenTitles.has(key)) continue;
+      seenAddresses.add(address);
+      seenTitles.add(key);
+      merged.push(item);
+    }
+  }
+
+  merged.sort((a, b) => score(b, now) - score(a, now));
+  return { items: merged.slice(0, 600), status: refreshedStatus };
+}
+
 async function refresh() {
   if (state.isRefreshing) return;
   state.isRefreshing = true;
   renderHeader();
   renderFeed();
 
-  const sources = SOURCES.filter(s => state.enabled.has(s.id));
+  const sources = SOURCES.filter(s => state.enabled.has(s.id))
+    .slice()
+    .sort((a, b) => priorityValue(a) - priorityValue(b));
+
   const previousBySource = {};
   for (const item of state.items) {
     (previousBySource[item.sourceID] = previousBySource[item.sourceID] || []).push(item);
   }
 
-  // Stagger the sources so they don't all land on the same proxy at once.
-  const results = await Promise.all(sources.map(async (source, index) => {
-    await delay(index * 200);
+  const results = new Map();
+  let lastPaint = 0;
+
+  await Promise.all(sources.map(async (source, index) => {
+    await delay(index * 120);
+    let result;
     try {
-      return { id: source.id, items: await loadSource(source), error: null };
+      result = { items: await loadSource(source), error: null };
     } catch (err) {
-      return { id: source.id, items: [], error: friendlyError(err) };
+      result = { items: [], error: friendlyError(err) };
+    }
+    results.set(source.id, result);
+
+    // Paint as each source lands, so the feed fills in instead of waiting for
+    // the slowest one.
+    const now = Date.now();
+    if (now - lastPaint > 400) {
+      lastPaint = now;
+      const merged = mergeSources(sources, results, previousBySource);
+      state.items = merged.items;
+      state.status = merged.status;
+      renderHeader();
+      renderFeed();
     }
   }));
 
-  const now = new Date();
-  let merged = [];
-  const seenAddresses = new Set();
-  const seenTitles = new Set();
-  const refreshedStatus = {};
-
-  for (const source of sources) {
-    const result = results.find(r => r.id === source.id);
-    let sourceItems;
-    if (result && !result.error) {
-      sourceItems = result.items;
-      refreshedStatus[source.id] = { count: result.items.length, error: null, updatedAt: now.toISOString() };
-    } else {
-      // A source that fails keeps what it had, so a flaky request never empties the feed.
-      sourceItems = previousBySource[source.id] || [];
-      refreshedStatus[source.id] = {
-        count: sourceItems.length,
-        error: (result && result.error) || 'Could not load',
-        updatedAt: (state.status[source.id] && state.status[source.id].updatedAt) || null
-      };
-    }
-    for (const item of sourceItems) {
-      const address = dedupeKey(item);
-      const tKey = titleKey(item);
-      if (seenAddresses.has(address) || seenTitles.has(tKey)) continue;
-      seenAddresses.add(address);
-      seenTitles.add(tKey);
-      merged.push(item);
-    }
-  }
-
-  merged.sort((a, b) => score(b, now) - score(a, now));
-
-  state.items = merged.slice(0, 600);
-  state.status = refreshedStatus;
-  state.lastRefreshed = now;
+  const merged = mergeSources(sources, results, previousBySource);
+  state.items = merged.items;
+  state.status = merged.status;
+  state.lastRefreshed = new Date();
   state.isRefreshing = false;
   pruneRead();
   persist();
@@ -1079,7 +1115,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.7';
+const APP_VERSION = '2026-10-28.8';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');

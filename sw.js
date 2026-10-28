@@ -41,15 +41,36 @@ self.addEventListener('fetch', event => {
   // Feeds and proxies are somebody else's servers — never cache or intercept them.
   if (url.origin !== self.location.origin) return;
 
+  // Pages go to the network first, so a new deploy is picked up on the next
+  // open. Static files are served from the cache instantly and refreshed in
+  // the background; each release points at new versioned URLs anyway.
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request, { cache: 'no-cache' })
+        .then(response => {
+          if (response && response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE).then(cache => cache.put(request, copy)).catch(() => {});
+          }
+          return response;
+        })
+        .catch(() => caches.match(request).then(cached => cached || caches.match('index.html')))
+    );
+    return;
+  }
+
   event.respondWith(
-    fetch(request, { cache: 'no-cache' })
-      .then(response => {
-        if (response && response.ok) {
-          const copy = response.clone();
-          caches.open(CACHE).then(cache => cache.put(request, copy)).catch(() => {});
-        }
-        return response;
-      })
-      .catch(() => caches.match(request).then(cached => cached || caches.match('index.html')))
+    caches.match(request).then(cached => {
+      const network = fetch(request)
+        .then(response => {
+          if (response && response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE).then(cache => cache.put(request, copy)).catch(() => {});
+          }
+          return response;
+        })
+        .catch(() => cached);
+      return cached || network;
+    })
   );
 });
