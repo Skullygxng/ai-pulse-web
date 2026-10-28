@@ -26,9 +26,9 @@ const SOURCES = [
   { id: 'venturebeat-ai', name: 'VentureBeat', kind: 'rss', category: 'news', handle: 'venturebeat.com', endpoint: 'https://venturebeat.com/category/ai/feed/' },
   { id: 'the-decoder', name: 'The Decoder', kind: 'rss', category: 'news', handle: 'the-decoder.com', endpoint: 'https://the-decoder.com/feed/' },
   { id: 'simon-willison', name: 'Simon Willison', kind: 'rss', category: 'news', handle: 'simonwillison.net', endpoint: 'https://simonwillison.net/atom/everything/' },
-  { id: 'arxiv-ai', name: 'arXiv cs.AI', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/rss/cs.AI' },
-  { id: 'arxiv-lg', name: 'arXiv cs.LG', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/rss/cs.LG' },
-  { id: 'arxiv-cl', name: 'arXiv cs.CL', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/rss/cs.CL' }
+  { id: 'arxiv-ai', name: 'arXiv cs.AI', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/api/query?search_query=cat:cs.AI&sortBy=submittedDate&sortOrder=descending&max_results=30' },
+  { id: 'arxiv-lg', name: 'arXiv cs.LG', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/api/query?search_query=cat:cs.LG&sortBy=submittedDate&sortOrder=descending&max_results=30' },
+  { id: 'arxiv-cl', name: 'arXiv cs.CL', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/api/query?search_query=cat:cs.CL&sortBy=submittedDate&sortOrder=descending&max_results=30' }
 ];
 
 const CATEGORIES = ['community', 'news', 'research'];
@@ -152,6 +152,18 @@ function isAIRelevant(title) {
   return tokens.some(t => AI_KEYWORDS.has(t));
 }
 
+// Which fetch path each source last succeeded with ('rss2json' or 'direct'),
+// so the next refresh tries that first instead of re-failing the worse one.
+const lastGoodMethod = {};
+
+// RSS2JSON's free tier rate-limits per IP. When it does, stop hitting it
+// for a while and let sources use the proxy chain instead.
+let rss2jsonCooldownUntil = 0;
+
+function isRateLimitError(err) {
+  return !!(err && err.rateLimited) || /(403|429)/.test(err && err.message || '');
+}
+
 // MARK: - Networking
 
 async function fetchWithTimeout(url, ms) {
@@ -244,11 +256,29 @@ async function loadRedditJSON(sub) {
 
 /// RSS2JSON reads feeds on its own servers, so a local network block or a
 /// dead proxy can't stop it. Free tier, no key.
+function rateLimitError(message) {
+  const err = new Error(message);
+  err.rateLimited = true;
+  return err;
+}
+
 async function fetchViaRSS2JSON(url) {
+  if (Date.now() < rss2jsonCooldownUntil) throw new Error('RSS2JSON cooling down');
   const response = await fetchWithTimeout('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(url), 20000);
+  if (response.status === 403 || response.status === 429 || response.status === 466) {
+    rss2jsonCooldownUntil = Date.now() + 10 * 60 * 1000;
+    throw rateLimitError('RSS2JSON rate limited (HTTP ' + response.status + ')');
+  }
   if (!response.ok) throw new Error('HTTP ' + response.status);
   const data = await response.json();
-  if (data.status !== 'ok' || !data.feed) throw new Error(data.message || 'Feed rejected');
+  if (data.status !== 'ok' || !data.feed) {
+    const reason = data.message || 'Feed rejected';
+    if (/limit/i.test(reason)) {
+      rss2jsonCooldownUntil = Date.now() + 10 * 60 * 1000;
+      throw rateLimitError(reason);
+    }
+    throw new Error(reason);
+  }
   return data;
 }
 
@@ -359,12 +389,33 @@ function parseFeed(xmlText, source) {
   }).filter(item => item.title);
 }
 
+async function loadRSSViaRSS2JSON(source) {
+  const data = await fetchViaRSS2JSON(source.endpoint);
+  const items = itemsFromRSS2JSON(data, source);
+  lastGoodMethod[source.id] = 'rss2json';
+  return items;
+}
+
+async function loadRSSDirect(source) {
+  const items = parseFeed(await fetchText(source.endpoint), source);
+  lastGoodMethod[source.id] = 'direct';
+  return items;
+}
+
 async function loadRSS(source) {
-  try {
-    const data = await fetchViaRSS2JSON(source.endpoint);
-    return itemsFromRSS2JSON(data, source);
-  } catch (rss2jsonError) {
-    return parseFeed(await fetchText(source.endpoint), source);
+  const preferred = lastGoodMethod[source.id] || 'rss2json';
+  if (preferred === 'direct') {
+    try {
+      return await loadRSSDirect(source);
+    } catch (directError) {
+      return await loadRSSViaRSS2JSON(source);
+    }
+  } else {
+    try {
+      return await loadRSSViaRSS2JSON(source);
+    } catch (rss2jsonError) {
+      return await loadRSSDirect(source);
+    }
   }
 }
 
@@ -454,6 +505,7 @@ function persist() {
     readIDs: Array.from(state.readIDs),
     enabled: Array.from(state.enabled),
     status: state.status,
+    methods: lastGoodMethod,
     lastRefreshed: state.lastRefreshed ? state.lastRefreshed.toISOString() : null
   };
   saveRaw(JSON.stringify(snapshot));
@@ -470,6 +522,7 @@ function restore() {
     state.readIDs = new Set(data.readIDs || []);
     if (data.enabled && data.enabled.length) state.enabled = new Set(data.enabled);
     state.status = data.status || {};
+    Object.assign(lastGoodMethod, data.methods || {});
     state.lastRefreshed = data.lastRefreshed ? new Date(data.lastRefreshed) : null;
   } catch (e) { /* a broken snapshot just means a fresh start */ }
 }
@@ -508,7 +561,7 @@ async function refresh() {
       try {
         return { id: source.id, items: await loadSource(source), error: null };
       } catch (err) {
-        if (attempt === 1) return { id: source.id, items: [], error: friendlyError(err) };
+        if (attempt === 1 || isRateLimitError(err)) return { id: source.id, items: [], error: friendlyError(err) };
         await delay(2000);
       }
     }
@@ -720,6 +773,8 @@ function renderHeader() {
   refreshBtn.innerHTML = ICON.refresh;
   if (state.isRefreshing && state.items.length === 0) {
     updatedLine.textContent = 'Pulling the latest from your sources…';
+  } else if (state.isRefreshing) {
+    updatedLine.textContent = 'Refreshing your sources…';
   } else if (state.lastRefreshed) {
     const ok = SOURCES.filter(s => state.enabled.has(s.id) && !(state.status[s.id] && state.status[s.id].error)).length;
     const total = SOURCES.filter(s => state.enabled.has(s.id)).length;

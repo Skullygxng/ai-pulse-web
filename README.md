@@ -22,6 +22,6 @@ Open `index.html` in a browser, or serve the folder with any static file server.
 
 ## How fetching works
 
-Browsers can only read responses from servers that allow cross-origin requests. Feeds are first fetched through [RSS2JSON](https://rss2json.com/), which reads them server-side so local network blocks don't apply; if that fails, a direct request and then public CORS proxies (AllOrigins, CodeTabs) are tried, staggered and retried so one busy proxy can't sink the whole refresh. Reddit posts come from its JSON API when reachable and fall back to its RSS feed otherwise. A source that fails keeps its last stories instead of emptying the feed, and its error shows in the Sources tab.
+Browsers can only read responses from servers that allow cross-origin requests. Feeds are first fetched through [RSS2JSON](https://rss2json.com/), which reads them server-side so local network blocks don't apply; if that fails, a direct request and then public CORS proxies (AllOrigins, CodeTabs) are tried, staggered and retried so one busy proxy can't sink the whole refresh. The app remembers which path each source last succeeded with and tries that first; a service that rate-limits gets a ten-minute rest while the others carry on. Reddit posts come from its JSON API when reachable and fall back to its RSS feed otherwise. A source that fails keeps its last stories instead of emptying the feed, and its error shows in the Sources tab.
 
 Your feed, saved stories, read history and source toggles live in `localStorage` on your device. Nothing is sent anywhere.
