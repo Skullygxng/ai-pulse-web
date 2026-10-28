@@ -5,7 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>AI Pulse</title>
   <meta name="description" content="AI news, papers and community chatter — merged into one ranked feed.">
-  <link rel="stylesheet" href="styles.css">
+  <meta name="theme-color" content="#0A0C12">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="AI Pulse">
+  <link rel="stylesheet" href="styles.css?v=2">
 </head>
 <body>
   <div class="app">
@@ -13,7 +20,7 @@
     <header class="app-header">
       <div class="brand-row">
         <div class="brand">
-          <span class="brand-dot"></span>
+          <img class="brand-mark" src="icon-mark.svg" alt="" width="28" height="28">
           <h1>AI Pulse</h1>
         </div>
         <button id="refresh-btn" class="icon-btn" title="Refresh sources" aria-label="Refresh sources"></button>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="AI Pulse">
+  <title>AI Pulse</title>
+  <rect width="512" height="512" rx="116" fill="#0B0E15"/>
+
+  <!-- Signal arcs: the feed arriving, broken so it reads as a pulse. -->
+  <g fill="none" stroke-linecap="round" transform="rotate(-38 256 256)">
+    <circle cx="256" cy="256" r="166" stroke="#5B8DFF" stroke-opacity="0.20" stroke-width="20"
+            stroke-dasharray="470 118 300 156"/>
+    <circle cx="256" cy="256" r="120" stroke="#5B8DFF" stroke-opacity="0.46" stroke-width="24"
+            stroke-dasharray="520 234" />
+    <circle cx="256" cy="256" r="74" stroke="#6E9BFF" stroke-opacity="0.92" stroke-width="26"/>
+  </g>
+
+  <!-- The story at the centre of it all. -->
+  <circle cx="256" cy="256" r="40" fill="#5B8DFF" fill-opacity="0.22"/>
+  <circle cx="256" cy="256" r="26" fill="#F3F7FF"/>
+</svg>

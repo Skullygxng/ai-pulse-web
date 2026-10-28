@@ -56,12 +56,11 @@ body {
   gap: 10px;
 }
 
-.brand-dot {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 4px rgba(91, 141, 255, 0.15);
+.brand-mark {
+  width: 28px;
+  height: 28px;
+  display: block;
+  flex: none;
 }
 
 .brand h1 {

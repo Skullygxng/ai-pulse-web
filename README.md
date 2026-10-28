@@ -14,6 +14,8 @@ Stories are de-duplicated across sources, ranked by freshness decayed over time 
 
 Open `index.html` in a browser, or serve the folder with any static file server. There is nothing to build.
 
+The logo lives in `icon.svg` (app icon, favicon and home-screen icon) and `icon-mark.svg` (the header mark); `manifest.webmanifest` makes it installable to a Home Screen as a standalone app.
+
 ## Hosting on GitHub Pages
 
 1. Push this repository to GitHub.

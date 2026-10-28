@@ -1,0 +1,25 @@
+{
+  "name": "AI Pulse",
+  "short_name": "AI Pulse",
+  "description": "AI news, papers and community chatter — merged into one ranked feed.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0A0C12",
+  "theme_color": "#0A0C12",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

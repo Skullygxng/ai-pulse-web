@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="AI Pulse">
+  <title>AI Pulse</title>
+  <g fill="none" stroke-linecap="round" transform="rotate(-38 256 256)">
+    <circle cx="256" cy="256" r="188" stroke="#5B8DFF" stroke-opacity="0.22" stroke-width="22"
+            stroke-dasharray="500 130 320 170"/>
+    <circle cx="256" cy="256" r="132" stroke="#5B8DFF" stroke-opacity="0.52" stroke-width="26"
+            stroke-dasharray="560 260"/>
+    <circle cx="256" cy="256" r="80" stroke="#6E9BFF" stroke-opacity="0.95" stroke-width="30"/>
+  </g>
+  <circle cx="256" cy="256" r="46" fill="#5B8DFF" fill-opacity="0.20"/>
+  <circle cx="256" cy="256" r="28" fill="#F3F7FF"/>
+</svg>
