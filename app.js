@@ -60,6 +60,16 @@ const PROXIES = [
   url => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url)
 ];
 
+/// YouTube refuses cross-origin reads itself, and its feed URL is flaky through
+/// the public proxies, so channel feeds are also tried on Invidious mirrors —
+/// same Atom shape, different host, reachable when youtube.com isn't.
+const INVIDIOUS_FEEDS = [
+  id => 'https://inv.nadeko.net/feed/channel/' + id,
+  id => 'https://invidious.nerdvpn.de/feed/channel/' + id,
+  id => 'https://iv.catgirl.cloud/feed/channel/' + id,
+  id => 'https://yewtu.be/feed/channel/' + id
+];
+
 const delay = ms => new Promise(function (resolve) { setTimeout(resolve, ms); });
 
 /// Browsers give unhelpful names to a blocked or dropped request.
@@ -546,6 +556,54 @@ async function loadRSS(source) {
   return source.kind === 'rss' ? items : items.map(item => Object.assign({}, item, { kind: source.kind }));
 }
 
+// MARK: - YouTube
+
+function youtubeChannelID(source) {
+  const match = source.endpoint.match(/channel_id=([\w-]+)/);
+  return match ? match[1] : '';
+}
+
+/// Whatever served the feed, cards should point at youtube.com and keep a
+/// stable id, so read and saved state survive a flip between mirrors.
+function normalizeYoutubeItem(source, item) {
+  let url = item.articleURL || '';
+  const video = url.match(/[?&]v=([\w-]{6,})/);
+  if (video) url = 'https://www.youtube.com/watch?v=' + video[1];
+  return Object.assign({}, item, { kind: source.kind, articleURL: url, id: source.id + '-' + stableHash(url || item.title) });
+}
+
+async function loadYoutubeFromInvidious(source) {
+  const channelID = youtubeChannelID(source);
+  let lastError = new Error('Could not load');
+  for (const make of INVIDIOUS_FEEDS) {
+    try {
+      const items = parseFeed(await fetchText(make(channelID)), source);
+      if (items.length) {
+        lastGoodMethod[source.id] = 'invidious';
+        return items.map(item => normalizeYoutubeItem(source, item));
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError;
+}
+
+async function loadYoutube(source) {
+  if (lastGoodMethod[source.id] === 'invidious') {
+    try {
+      return await loadYoutubeFromInvidious(source);
+    } catch (invidiousError) {
+      return (await loadRSSViaChain(source)).map(item => normalizeYoutubeItem(source, item));
+    }
+  }
+  try {
+    return (await loadRSSViaChain(source)).map(item => normalizeYoutubeItem(source, item));
+  } catch (officialError) {
+    return loadYoutubeFromInvidious(source);
+  }
+}
+
 /// Hugging Face's daily papers API answers cross-origin directly, so research
 /// stays reachable even when the feed proxies are blocked.
 async function loadHFPapers() {
@@ -773,6 +831,7 @@ async function loadSource(source) {
   if (source.kind === 'hfModels') return loadHFModels();
   if (source.kind === 'bluesky') return loadBluesky();
   if (source.kind === 'x') return loadX();
+  if (source.kind === 'youtube') return loadYoutube(source);
   return loadRSS(source);
 }
 
@@ -1352,7 +1411,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.14';
+const APP_VERSION = '2026-10-28.15';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
