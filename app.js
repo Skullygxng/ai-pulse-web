@@ -383,7 +383,7 @@ function parseFeed(xmlText, source) {
   if (doc.querySelector('parsererror')) throw new Error('Could not parse feed');
 
   const entries = Array.from(doc.querySelectorAll('item')).concat(Array.from(doc.querySelectorAll('entry')));
-  return entries.slice(0, 40).map(entry => {
+  return entries.slice(0, 40).map((entry, entryIndex) => {
     const rawTitle = childByLocalName(entry, ['title']);
     let title = decodeEntities(rawTitle ? rawTitle.textContent : '');
 
@@ -402,8 +402,10 @@ function parseFeed(xmlText, source) {
     summary = summary.replace(/\s+/g, ' ').trim().slice(0, 240);
 
     const rawDate = childByLocalName(entry, ['pubDate', 'updated', 'published', 'date']);
-    let published = rawDate ? new Date(rawDate.textContent.trim()) : new Date(Date.now() - UNDATED_AGE_MS);
-    if (isNaN(published.getTime())) published = new Date(Date.now() - UNDATED_AGE_MS);
+    let published = rawDate ? new Date(rawDate.textContent.trim()) : null;
+    if (!published || isNaN(published.getTime())) {
+      published = new Date(Date.now() - UNDATED_AGE_MS - entryIndex * 15 * 60 * 1000);
+    }
 
     if (source.stripsOutletSuffix) title = title.replace(/\s+-\s+[^-]+$/, '');
 
@@ -464,9 +466,9 @@ function parseFeedMarkdown(markdown, source) {
       sourceName: source.name,
       category: source.category,
       kind: 'rss',
-      // No date is no excuse to claim "just now": park it a few hours back so
-      // it can't jump the queue ahead of genuinely fresh stories.
-      publishedAt: published || new Date(Date.now() - UNDATED_AGE_MS),
+      // No date is no excuse to claim "just now": park it a few hours back,
+      // newest first, so it can't jump the queue ahead of fresh stories.
+      publishedAt: published || new Date(Date.now() - UNDATED_AGE_MS - items.length * 15 * 60 * 1000),
       points: 0,
       commentCount: 0,
       author: null
@@ -1333,7 +1335,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.12';
+const APP_VERSION = '2026-10-28.13';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
