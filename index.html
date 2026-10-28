@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>AI Pulse</title>
+  <meta name="description" content="AI news, papers and community chatter — merged into one ranked feed.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+
+    <header class="app-header">
+      <div class="brand-row">
+        <div class="brand">
+          <span class="brand-dot"></span>
+          <h1>AI Pulse</h1>
+        </div>
+        <button id="refresh-btn" class="icon-btn" title="Refresh sources" aria-label="Refresh sources"></button>
+      </div>
+      <p class="updated-line" id="updated-line"></p>
+    </header>
+
+    <nav class="view-tabs" id="view-tabs">
+      <button class="view-tab is-active" data-view="feed">Feed</button>
+      <button class="view-tab" data-view="saved">Saved <span class="tab-count" id="saved-count" hidden></span></button>
+      <button class="view-tab" data-view="sources">Sources</button>
+    </nav>
+
+    <section id="view-feed" class="view is-active">
+      <div class="toolbar">
+        <div class="chip-row" id="filter-chips">
+          <button class="chip is-active" data-filter="all">All</button>
+          <button class="chip" data-filter="community">Community</button>
+          <button class="chip" data-filter="news">News</button>
+          <button class="chip" data-filter="research">Research</button>
+        </div>
+        <div class="toolbar-side">
+          <div class="segmented" id="sort-seg">
+            <button class="seg-btn is-active" data-sort="forYou">For You</button>
+            <button class="seg-btn" data-sort="latest">Latest</button>
+            <button class="seg-btn" data-sort="top">Top</button>
+          </div>
+          <button id="mark-read-btn" class="quiet-btn">Mark all read</button>
+        </div>
+      </div>
+      <div class="search-row">
+        <span class="search-icon" aria-hidden="true"></span>
+        <input id="search-input" type="search" placeholder="Search stories and sources" autocomplete="off">
+      </div>
+      <div id="feed-list" class="list"></div>
+    </section>
+
+    <section id="view-saved" class="view">
+      <div id="saved-list" class="list"></div>
+    </section>
+
+    <section id="view-sources" class="view">
+      <p class="sources-note">Turn off what you don't read — everything left is merged into one ranked feed.</p>
+      <div id="sources-list"></div>
+    </section>
+
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
