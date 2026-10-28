@@ -26,6 +26,7 @@ const SOURCES = [
   { id: 'venturebeat-ai', name: 'VentureBeat', kind: 'rss', category: 'news', handle: 'venturebeat.com', endpoint: 'https://venturebeat.com/category/ai/feed/' },
   { id: 'the-decoder', name: 'The Decoder', kind: 'rss', category: 'news', handle: 'the-decoder.com', endpoint: 'https://the-decoder.com/feed/' },
   { id: 'simon-willison', name: 'Simon Willison', kind: 'rss', category: 'news', handle: 'simonwillison.net', endpoint: 'https://simonwillison.net/atom/everything/' },
+  { id: 'hf-papers', name: 'HF Daily Papers', kind: 'hfPapers', category: 'research', handle: 'huggingface.co/papers', endpoint: '' },
   { id: 'arxiv-ai', name: 'arXiv cs.AI', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/api/query?search_query=cat:cs.AI&sortBy=submittedDate&sortOrder=descending&max_results=30' },
   { id: 'arxiv-lg', name: 'arXiv cs.LG', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/api/query?search_query=cat:cs.LG&sortBy=submittedDate&sortOrder=descending&max_results=30' },
   { id: 'arxiv-cl', name: 'arXiv cs.CL', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/api/query?search_query=cat:cs.CL&sortBy=submittedDate&sortOrder=descending&max_results=30' }
@@ -44,6 +45,7 @@ const delay = ms => new Promise(function (resolve) { setTimeout(resolve, ms); })
 function friendlyError(err) {
   const message = (err && err.message) || '';
   if (message === 'Load failed' || message === 'Failed to fetch' || message.indexOf('NetworkError') === 0) return 'Network error';
+  if (err && err.name === 'AbortError') return 'Timed out';
   return message || 'Could not load';
 }
 
@@ -160,17 +162,14 @@ const lastGoodMethod = {};
 // for a while and let sources use the proxy chain instead.
 let rss2jsonCooldownUntil = 0;
 
-function isRateLimitError(err) {
-  return !!(err && err.rateLimited) || /(403|429)/.test(err && err.message || '');
-}
-
 // MARK: - Networking
-
-async function fetchWithTimeout(url, ms) {
+async function fetchResource(url, ms) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms || 12000);
+  const timer = setTimeout(() => controller.abort(), ms);
   try {
-    return await fetch(url, { signal: controller.signal, redirect: 'follow' });
+    const response = await fetch(url, { signal: controller.signal, redirect: 'follow' });
+    const body = await response.text();
+    return { ok: response.status >= 200 && response.status < 300, status: response.status, body: body };
   } finally {
     clearTimeout(timer);
   }
@@ -179,16 +178,16 @@ async function fetchWithTimeout(url, ms) {
 /// Direct first; a CORS-blocked or failed request falls back through public proxies.
 async function fetchText(url) {
   try {
-    const response = await fetchWithTimeout(url);
-    if (!response.ok) throw new Error('HTTP ' + response.status);
-    return await response.text();
+    const direct = await fetchResource(url, 6000);
+    if (!direct.ok) throw new Error('HTTP ' + direct.status);
+    return direct.body;
   } catch (directError) {
     let lastError = directError;
     for (const makeURL of PROXIES) {
       try {
-        const response = await fetchWithTimeout(makeURL(url), 20000);
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-        return await response.text();
+        const proxied = await fetchResource(makeURL(url), 10000);
+        if (!proxied.ok) throw new Error('HTTP ' + proxied.status);
+        return proxied.body;
       } catch (proxyError) {
         lastError = proxyError;
       }
@@ -264,13 +263,13 @@ function rateLimitError(message) {
 
 async function fetchViaRSS2JSON(url) {
   if (Date.now() < rss2jsonCooldownUntil) throw new Error('RSS2JSON cooling down');
-  const response = await fetchWithTimeout('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(url), 20000);
-  if (response.status === 403 || response.status === 429 || response.status === 466) {
+  const result = await fetchResource('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(url), 12000);
+  if (result.status === 403 || result.status === 429 || result.status === 466) {
     rss2jsonCooldownUntil = Date.now() + 10 * 60 * 1000;
-    throw rateLimitError('RSS2JSON rate limited (HTTP ' + response.status + ')');
+    throw rateLimitError('RSS2JSON rate limited (HTTP ' + result.status + ')');
   }
-  if (!response.ok) throw new Error('HTTP ' + response.status);
-  const data = await response.json();
+  if (!result.ok) throw new Error('HTTP ' + result.status);
+  const data = JSON.parse(result.body);
   if (data.status !== 'ok' || !data.feed) {
     const reason = data.message || 'Feed rejected';
     if (/limit/i.test(reason)) {
@@ -403,7 +402,7 @@ async function loadRSSDirect(source) {
 }
 
 async function loadRSS(source) {
-  const preferred = lastGoodMethod[source.id] || 'rss2json';
+  const preferred = lastGoodMethod[source.id] || 'direct';
   if (preferred === 'direct') {
     try {
       return await loadRSSDirect(source);
@@ -419,9 +418,38 @@ async function loadRSS(source) {
   }
 }
 
+/// Hugging Face's daily papers API answers cross-origin directly, so research
+/// stays reachable even when the feed proxies are blocked.
+async function loadHFPapers() {
+  const data = await fetchJSON('https://huggingface.co/api/daily_papers?limit=30');
+  return (Array.isArray(data) ? data : []).map(entry => {
+    const paper = entry.paper || entry;
+    const title = paper.title || entry.title || '';
+    let publishedAt = paper.publishedAt ? new Date(paper.publishedAt) : new Date();
+    if (isNaN(publishedAt.getTime())) publishedAt = new Date();
+    const authors = paper.authors || [];
+    return {
+      id: 'hf-paper-' + (paper.id || stableHash(title)),
+      title: decodeEntities(title),
+      summary: (paper.summary || '').replace(/\s+/g, ' ').trim().slice(0, 240),
+      articleURL: paper.id ? 'https://huggingface.co/papers/' + paper.id : null,
+      discussionURL: null,
+      sourceID: 'hf-papers',
+      sourceName: 'HF Daily Papers',
+      category: 'research',
+      kind: 'rss',
+      publishedAt: publishedAt,
+      points: entry.upvotes || paper.upvotes || 0,
+      commentCount: entry.numComments || paper.numComments || 0,
+      author: (authors[0] && authors[0].name) || null
+    };
+  }).filter(item => item.title);
+}
+
 async function loadSource(source) {
   if (source.kind === 'hn') return loadHN();
   if (source.kind === 'reddit') return loadReddit(source.endpoint);
+  if (source.kind === 'hfPapers') return loadHFPapers();
   return loadRSS(source);
 }
 
@@ -553,17 +581,13 @@ async function refresh() {
     (previousBySource[item.sourceID] = previousBySource[item.sourceID] || []).push(item);
   }
 
-  // Stagger the sources so 18 requests don't land on the proxies at once,
-  // and give a source that fails one second try.
+  // Stagger the sources so they don't all land on the same proxy at once.
   const results = await Promise.all(sources.map(async (source, index) => {
-    await delay(index * 350);
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        return { id: source.id, items: await loadSource(source), error: null };
-      } catch (err) {
-        if (attempt === 1 || isRateLimitError(err)) return { id: source.id, items: [], error: friendlyError(err) };
-        await delay(2000);
-      }
+    await delay(index * 200);
+    try {
+      return { id: source.id, items: await loadSource(source), error: null };
+    } catch (err) {
+      return { id: source.id, items: [], error: friendlyError(err) };
     }
   }));
 
