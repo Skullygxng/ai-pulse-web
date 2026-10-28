@@ -16,6 +16,7 @@ const SOURCES = [
   { id: 'reddit-openai', name: 'r/OpenAI', kind: 'reddit', category: 'community', handle: 'reddit.com/r/OpenAI', endpoint: 'OpenAI' },
   { id: 'reddit-claudeai', name: 'r/ClaudeAI', kind: 'reddit', category: 'community', handle: 'reddit.com/r/ClaudeAI', endpoint: 'ClaudeAI' },
   { id: 'reddit-singularity', name: 'r/singularity', kind: 'reddit', category: 'community', handle: 'reddit.com/r/singularity', endpoint: 'singularity' },
+  { id: 'bluesky', name: 'Bluesky voices', kind: 'bluesky', category: 'community', handle: 'bsky.app', endpoint: '' },
   { id: 'google-news', name: 'Google News', kind: 'rss', category: 'news', handle: 'news.google.com', endpoint: 'https://news.google.com/rss/search?q=%22artificial+intelligence%22+OR+LLM+OR+%22open+source+AI%22+when%3A2d&hl=en-US&gl=US&ceid=US:en', stripsOutletSuffix: true },
   { id: 'openai', name: 'OpenAI', kind: 'rss', category: 'news', handle: 'openai.com', endpoint: 'https://openai.com/news/rss.xml' },
   { id: 'deepmind', name: 'Google DeepMind', kind: 'rss', category: 'news', handle: 'deepmind.google', endpoint: 'https://deepmind.google/blog/rss.xml' },
@@ -63,6 +64,7 @@ function ic(inner) {
 const ICON = {
   hn: ic('<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'),
   reddit: ic('<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>'),
+  bluesky: ic('<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>'),
   rss: ic('<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>'),
   bookmark: ic('<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>'),
   arrowUp: ic('<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>'),
@@ -446,10 +448,68 @@ async function loadHFPapers() {
   }).filter(item => item.title);
 }
 
+/// X closed free access to its timeline: the Nitter mirrors that used to relay
+/// it are dead or bot-walled, its API is paid, and its embed endpoint is
+/// rate-limited. Almost every AI lab and researcher posts the same material on
+/// Bluesky, whose public API is free, key-less and cross-origin friendly.
+const BLUESKY_ACCOUNTS = [
+  'simonwillison.net',
+  'emollick.bsky.social',
+  'natolambert.bsky.social',
+  'karpathy.bsky.social'
+];
+
+async function fetchBlueskyAccount(handle) {
+  const url = 'https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=' +
+    encodeURIComponent(handle) + '&limit=12&filter=posts_no_replies';
+  const data = await fetchJSON(url);
+
+  return (data.feed || []).map(entry => entry.post).filter(post => post && post.record && post.record.text).map(post => {
+    const author = post.author || {};
+    const handleUsed = author.handle || handle;
+    const rkey = (post.uri || '').split('/').pop();
+    const link = 'https://bsky.app/profile/' + handleUsed + '/post/' + rkey;
+    let publishedAt = new Date(post.record.createdAt || post.indexedAt || Date.now());
+    if (isNaN(publishedAt.getTime())) publishedAt = new Date();
+    const text = post.record.text.replace(/\s+/g, ' ').trim();
+
+    return {
+      id: 'bsky-' + post.uri,
+      title: text.slice(0, 220),
+      summary: '',
+      articleURL: link,
+      discussionURL: link,
+      sourceID: 'bluesky',
+      sourceName: (author.displayName || '@' + handleUsed) + ' · Bluesky',
+      category: 'community',
+      kind: 'bluesky',
+      publishedAt: publishedAt,
+      points: post.likeCount || 0,
+      commentCount: post.replyCount || 0,
+      author: '@' + handleUsed
+    };
+  });
+}
+
+async function loadBluesky() {
+  const settled = await Promise.allSettled(BLUESKY_ACCOUNTS.map(fetchBlueskyAccount));
+  const items = [];
+  for (const result of settled) {
+    if (result.status === 'fulfilled') items.push(...result.value);
+  }
+  if (items.length === 0) {
+    const failure = settled.find(result => result.status === 'rejected');
+    if (failure) throw failure.reason;
+  }
+  items.sort((a, b) => engagement(b) - engagement(a));
+  return items.slice(0, 40);
+}
+
 async function loadSource(source) {
   if (source.kind === 'hn') return loadHN();
   if (source.kind === 'reddit') return loadReddit(source.endpoint);
   if (source.kind === 'hfPapers') return loadHFPapers();
+  if (source.kind === 'bluesky') return loadBluesky();
   return loadRSS(source);
 }
 
@@ -915,7 +975,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.4';
+const APP_VERSION = '2026-10-28.5';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
