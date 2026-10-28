@@ -243,7 +243,7 @@ async function loadHN() {
     '&numericFilters=created_at_i%3E' + since + '%2Cpoints%3E15&hitsPerPage=300'
   );
   const hits = (data.hits || [])
-    .filter(hit => h.title && isAIRelevant(hit.title + ' ' + (hit.story_text || '')))
+    .filter(hit => hit.title && isAIRelevant(hit.title + ' ' + (hit.story_text || '')))
     .slice(0, 80);
   return hits.map(h => {
     const discussion = 'https://news.ycombinator.com/item?id=' + h.objectID;
@@ -402,8 +402,8 @@ function parseFeed(xmlText, source) {
     summary = summary.replace(/\s+/g, ' ').trim().slice(0, 240);
 
     const rawDate = childByLocalName(entry, ['pubDate', 'updated', 'published', 'date']);
-    let published = rawDate ? new Date(rawDate.textContent.trim()) : new Date();
-    if (isNaN(published.getTime())) published = new Date();
+    let published = rawDate ? new Date(rawDate.textContent.trim()) : new Date(Date.now() - UNDATED_AGE_MS);
+    if (isNaN(published.getTime())) published = new Date(Date.now() - UNDATED_AGE_MS);
 
     if (source.stripsOutletSuffix) title = title.replace(/\s+-\s+[^-]+$/, '');
 
@@ -445,7 +445,8 @@ function parseFeedMarkdown(markdown, source) {
     seen.add(link);
 
     let published = null;
-    const nearby = (lines[index + 1] || '') + ' ' + (lines[index + 2] || '');
+    // The date usually sits a line or two after the headline, under the link.
+    const nearby = [1, 2, 3, 4].map(step => lines[index + step] || '').join(' ');
     const date = nearby.match(/(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
     if (date) {
       published = new Date(Date.UTC(+date[3], X_MONTHS[date[2]], +date[1], +date[4], +date[5], +date[6]));
@@ -463,7 +464,9 @@ function parseFeedMarkdown(markdown, source) {
       sourceName: source.name,
       category: source.category,
       kind: 'rss',
-      publishedAt: published || new Date(),
+      // No date is no excuse to claim "just now": park it a few hours back so
+      // it can't jump the queue ahead of genuinely fresh stories.
+      publishedAt: published || new Date(Date.now() - UNDATED_AGE_MS),
       points: 0,
       commentCount: 0,
       author: null
@@ -630,6 +633,10 @@ function cleanXLine(line) {
 const X_MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
 const X_DATE = /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\b/;
 
+/// How old an item without a parseable date is treated as, so undated feeds
+/// can't crowd out stories we know are fresh.
+const UNDATED_AGE_MS = 6 * 60 * 60 * 1000;
+
 /// The reader gives a profile page, so a post's date arrives as "Oct 23" next
 /// to the handle. Using it keeps old posts from resurfacing as if they were new.
 function xDateFromText(text) {
@@ -721,10 +728,10 @@ async function loadHFModels() {
     .map(model => {
       const owner = model.id.split('/')[0];
       const name = model.id.split('/').pop();
-      const task = (model.pipeline_tag || 'model').replace(/-/g, ' ');
+      const task = (model.pipeline_tag || '').replace(/-/g, ' ');
       return {
         id: 'hfm-' + model.id,
-        title: name + ' — new ' + task + ' model',
+        title: name + (task ? ' — new ' + task + ' model' : ' — new model'),
         summary: 'by ' + owner + ' · ' + compactCount(model.likes || 0) + ' likes · ' + compactCount(model.downloads || 0) + ' downloads',
         articleURL: 'https://huggingface.co/' + model.id,
         discussionURL: null,
@@ -1326,7 +1333,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.11';
+const APP_VERSION = '2026-10-28.12';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
