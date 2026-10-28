@@ -33,7 +33,19 @@ const SOURCES = [
 
 const CATEGORIES = ['community', 'news', 'research'];
 const CATEGORY_TITLES = { community: 'Community', news: 'News', research: 'Research' };
-const PROXY = 'https://api.allorigins.win/raw?url=';
+const PROXIES = [
+  url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
+  url => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url)
+];
+
+const delay = ms => new Promise(function (resolve) { setTimeout(resolve, ms); });
+
+/// Browsers give unhelpful names to a blocked or dropped request.
+function friendlyError(err) {
+  const message = (err && err.message) || '';
+  if (message === 'Load failed' || message === 'Failed to fetch' || message.indexOf('NetworkError') === 0) return 'Network error';
+  return message || 'Could not load';
+}
 
 function defaultEnabled() {
   // The two long-tail arXiv firehoses start off, like the iOS app.
@@ -152,16 +164,24 @@ async function fetchWithTimeout(url, ms) {
   }
 }
 
-/// Direct first; a CORS-blocked or failed request falls back to a public proxy.
+/// Direct first; a CORS-blocked or failed request falls back through public proxies.
 async function fetchText(url) {
   try {
     const response = await fetchWithTimeout(url);
     if (!response.ok) throw new Error('HTTP ' + response.status);
     return await response.text();
   } catch (directError) {
-    const response = await fetchWithTimeout(PROXY + encodeURIComponent(url), 20000);
-    if (!response.ok) throw new Error('HTTP ' + response.status);
-    return await response.text();
+    let lastError = directError;
+    for (const makeURL of PROXIES) {
+      try {
+        const response = await fetchWithTimeout(makeURL(url), 20000);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return await response.text();
+      } catch (proxyError) {
+        lastError = proxyError;
+      }
+    }
+    throw lastError;
   }
 }
 
@@ -417,11 +437,17 @@ async function refresh() {
     (previousBySource[item.sourceID] = previousBySource[item.sourceID] || []).push(item);
   }
 
-  const results = await Promise.all(sources.map(async source => {
-    try {
-      return { id: source.id, items: await loadSource(source), error: null };
-    } catch (err) {
-      return { id: source.id, items: [], error: (err && err.message) || 'Could not load' };
+  // Stagger the sources so 18 requests don't land on the proxies at once,
+  // and give a source that fails one second try.
+  const results = await Promise.all(sources.map(async (source, index) => {
+    await delay(index * 350);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return { id: source.id, items: await loadSource(source), error: null };
+      } catch (err) {
+        if (attempt === 1) return { id: source.id, items: [], error: friendlyError(err) };
+        await delay(2000);
+      }
     }
   }));
 
@@ -607,7 +633,10 @@ function renderSources() {
       let info;
       if (!on) info = 'Off';
       else if (status.error) info = 'Error: ' + status.error;
-      else if (updated) info = (status.count || 0) + ' stories · ' + pulseRelative(updated) + ' ago';
+      else if (updated) {
+        const age = pulseRelative(updated);
+        info = (status.count || 0) + ' stories · ' + (age === 'now' ? 'just now' : age + ' ago');
+      }
       else info = 'Not refreshed yet';
       return (
         '<div class="source-row' + (on ? '' : ' is-off') + '">' +
@@ -631,7 +660,8 @@ function renderHeader() {
   } else if (state.lastRefreshed) {
     const ok = SOURCES.filter(s => state.enabled.has(s.id) && !(state.status[s.id] && state.status[s.id].error)).length;
     const total = SOURCES.filter(s => state.enabled.has(s.id)).length;
-    updatedLine.textContent = 'Updated ' + pulseRelative(state.lastRefreshed) + ' ago · ' + ok + ' of ' + total + ' sources OK';
+    const age = pulseRelative(state.lastRefreshed);
+    updatedLine.textContent = 'Updated ' + (age === 'now' ? 'just now' : age + ' ago') + ' · ' + ok + ' of ' + total + ' sources OK';
   } else {
     updatedLine.textContent = 'Not refreshed yet';
   }

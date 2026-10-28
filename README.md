@@ -22,6 +22,6 @@ Open `index.html` in a browser, or serve the folder with any static file server.
 
 ## How fetching works
 
-Browsers can only read responses from servers that allow cross-origin requests. Hacker News and Reddit respond directly; most RSS feeds do not, so those requests fall back to the public [AllOrigins](https://allorigins.win/) proxy. A source that fails keeps its last stories instead of emptying the feed, and its error shows in the Sources tab.
+Browsers can only read responses from servers that allow cross-origin requests. Hacker News and Reddit respond directly; most RSS feeds do not, so those requests fall back through public CORS proxies (AllOrigins and CodeTabs), staggered and retried so one busy proxy can't sink the whole refresh. A source that fails keeps its last stories instead of emptying the feed, and its error shows in the Sources tab.
 
 Your feed, saved stories, read history and source toggles live in `localStorage` on your device. Nothing is sent anywhere.
