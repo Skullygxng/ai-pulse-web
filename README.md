@@ -41,3 +41,9 @@ Some networks (corporate VPNs, some carrier routes) block Reddit and third-party
 **On X:** the free routes are gone — X's API is paid, the Nitter mirrors are suspended or bot-walled, RSSHub's Twitter bridge was removed and the public embed endpoint rate-limits. Two things still work and both are in the app: an **X (scraped)** source that renders public profiles through the free [Jina reader](https://r.jina.ai/) (best effort — headlines only, no metrics, and it shows an error if X refuses), and **Bluesky voices**, whose public API is free, key-less and carries the same conversation. Account handles for both live in `X_ACCOUNTS` and `BLUESKY_ACCOUNTS` in app.js.
 
 Your feed, saved stories, read history and source toggles live in `localStorage` on your device. Nothing is sent anywhere.
+
+## Known limits
+
+- **It depends on other people's servers.** Feeds are read directly, through public CORS proxies, through RSS2JSON or through the Jina reader, in that order. When all four are blocked for a given host — some corporate VPNs and carrier routes do this to Reddit in particular — that source reports an error and keeps its previous stories. `diagnostics.html` shows what your network can reach.
+- **Scraped sources are best effort.** X posts come from a rendered profile page, so they carry no like or comment counts and their links open the account rather than the individual post.
+- **The Home Screen icon is fixed at install.** Everything else updates itself.

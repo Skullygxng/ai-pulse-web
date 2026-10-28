@@ -876,7 +876,7 @@ function pruneRead() {
 // MARK: - Refresh
 
 // Fast, dependable sources paint first; Reddit and the X scrape come last.
-const SOURCE_PRIORITY = { hn: 0, hfPapers: 0, bluesky: 1, rss: 2, reddit: 3, x: 4 };
+const SOURCE_PRIORITY = { hn: 0, hfPapers: 0, hfModels: 0, bluesky: 1, rss: 2, reddit: 3, x: 4 };
 
 function priorityValue(source) {
   const value = SOURCE_PRIORITY[source.kind];
@@ -1173,16 +1173,22 @@ function renderAll() {
     view.classList.toggle('is-active', view.id === 'view-' + state.view);
   });
   document.querySelectorAll('#filter-chips .chip').forEach(chip => {
-    chip.classList.toggle('is-active', chip.dataset.filter === state.filter);
+    const on = chip.dataset.filter === state.filter;
+    chip.classList.toggle('is-active', on);
+    chip.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
   document.querySelectorAll('#sort-seg .seg-btn').forEach(button => {
-    button.classList.toggle('is-active', button.dataset.sort === state.sort);
+    const on = button.dataset.sort === state.sort;
+    button.classList.toggle('is-active', on);
+    button.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
   if (searchInput.value !== state.query) searchInput.value = state.query;
+
   renderHeader();
-  renderFeed();
-  renderSaved();
-  renderSources();
+  // Only the visible list is rebuilt; the others are built when they're opened.
+  if (state.view === 'feed') renderFeed();
+  else if (state.view === 'saved') renderSaved();
+  else renderSources();
 }
 
 // MARK: - Event wiring
@@ -1320,7 +1326,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.10';
+const APP_VERSION = '2026-10-28.11';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
