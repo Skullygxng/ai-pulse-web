@@ -315,10 +315,10 @@ function redditSource(sub) {
 }
 
 /// Reddit's JSON API from the browser works on most networks; where it is
-/// blocked, its RSS feed fetched server-side still gets the posts through.
+/// blocked, its RSS feed goes through the same proxy chain as the blogs.
 async function loadRedditRSS(sub) {
-  const data = await fetchViaRSS2JSON('https://www.reddit.com/r/' + sub + '/top.rss?t=day');
-  return itemsFromRSS2JSON(data, redditSource(sub));
+  const xml = await fetchText('https://www.reddit.com/r/' + sub + '/top.rss?t=day');
+  return parseFeed(xml, redditSource(sub));
 }
 
 async function loadReddit(sub) {
@@ -345,7 +345,7 @@ function parseFeed(xmlText, source) {
   const entries = Array.from(doc.querySelectorAll('item')).concat(Array.from(doc.querySelectorAll('entry')));
   return entries.slice(0, 40).map(entry => {
     const rawTitle = childByLocalName(entry, ['title']);
-    const title = decodeEntities(rawTitle ? rawTitle.textContent : '');
+    let title = decodeEntities(rawTitle ? rawTitle.textContent : '');
 
     // RSS puts the address in the link text; Atom puts it in an href.
     let link = '';
@@ -532,6 +532,7 @@ function persist() {
     saved: state.saved.map(item => Object.assign({}, item, { publishedAt: item.publishedAt.toISOString() })),
     readIDs: Array.from(state.readIDs),
     enabled: Array.from(state.enabled),
+    known: SOURCES.map(s => s.id),
     status: state.status,
     methods: lastGoodMethod,
     lastRefreshed: state.lastRefreshed ? state.lastRefreshed.toISOString() : null
@@ -549,6 +550,12 @@ function restore() {
     state.savedIDs = new Set(state.saved.map(item => item.id));
     state.readIDs = new Set(data.readIDs || []);
     if (data.enabled && data.enabled.length) state.enabled = new Set(data.enabled);
+    // Sources added since the snapshot was written start on, so a new one
+    // isn't silently left off for everyone who already has saved state.
+    const known = new Set(data.known || data.enabled || []);
+    for (const id of defaultEnabled()) {
+      if (!known.has(id)) state.enabled.add(id);
+    }
     state.status = data.status || {};
     Object.assign(lastGoodMethod, data.methods || {});
     state.lastRefreshed = data.lastRefreshed ? new Date(data.lastRefreshed) : null;
