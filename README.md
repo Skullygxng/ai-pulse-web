@@ -5,6 +5,7 @@ The web version of AI Pulse: AI news, papers and community chatter from across t
 ## What it pulls in
 
 - **Community** — Hacker News (via the Algolia API), Bluesky voices (Simon Willison, Ethan Mollick, Nathan Lambert and Andrej Karpathy, through Bluesky's free public API) and r/LocalLLaMA, r/MachineLearning, r/artificial, r/OpenAI, r/ClaudeAI and r/singularity.
+- **Videos** — nine AI YouTube channels (Two Minute Papers, Machine Learning Street Talk, Wes Roth, Matt Wolfe, AI Explained, AI Coffee Break, DeepLearningAI, sentdex and Yannic Kilcher) via YouTube's official per-channel RSS feeds, so every new video lands without any API key.
 - **News** — Google News, OpenAI, Google DeepMind, Hugging Face, The Verge, TechCrunch, MIT Tech Review, VentureBeat, The Decoder, Simon Willison, Google Research, Microsoft Research, Import AI, Interconnects, Latent Space and One Useful Thing.
 - **Underground** — LessWrong, The Gradient and Lobsters · ai, for the forums and long-form writing the mainstream never covers.
 - **New releases** — Hugging Face's trending models API, which surfaces every open model launch within hours.

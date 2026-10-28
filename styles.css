@@ -314,6 +314,7 @@ body {
 .glyph-research { background: rgba(69, 214, 180, 0.16); color: var(--research); }
 .glyph-underground { background: rgba(181, 140, 255, 0.16); color: #B58CFF; }
 .glyph-releases { background: rgba(255, 143, 199, 0.16); color: #FF8FC7; }
+.glyph-videos { background: rgba(255, 107, 107, 0.16); color: #FF6B6B; }
 
 .card-source {
   font-size: 12px;
@@ -395,6 +396,7 @@ body {
 
 .cat-community { color: var(--community); }
 .cat-news { color: var(--news); }
+.cat-videos { color: #FF6B6B; }
 .cat-research { color: var(--research); }
 .cat-underground { color: #B58CFF; }
 .cat-releases { color: #FF8FC7; }

@@ -41,11 +41,20 @@ const SOURCES = [
   { id: 'hf-papers', name: 'HF Daily Papers', kind: 'hfPapers', category: 'research', handle: 'huggingface.co/papers', endpoint: '' },
   { id: 'arxiv-ai', name: 'arXiv cs.AI', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/api/query?search_query=cat:cs.AI&sortBy=submittedDate&sortOrder=descending&max_results=30' },
   { id: 'arxiv-lg', name: 'arXiv cs.LG', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/api/query?search_query=cat:cs.LG&sortBy=submittedDate&sortOrder=descending&max_results=30' },
-  { id: 'arxiv-cl', name: 'arXiv cs.CL', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/api/query?search_query=cat:cs.CL&sortBy=submittedDate&sortOrder=descending&max_results=30' }
+  { id: 'arxiv-cl', name: 'arXiv cs.CL', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/api/query?search_query=cat:cs.CL&sortBy=submittedDate&sortOrder=descending&max_results=30' },
+  { id: 'yt-twominutepapers', name: 'Two Minute Papers', kind: 'youtube', category: 'videos', handle: 'youtube.com/@TwoMinutePapers', endpoint: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCbfYPyITQ-7l4upoX8nvctg' },
+  { id: 'yt-mlst', name: 'Machine Learning Street Talk', kind: 'youtube', category: 'videos', handle: 'youtube.com/@MachineLearningStreetTalk', endpoint: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCMLtBahI5DMrt0NPvDSoIRQ' },
+  { id: 'yt-wesroth', name: 'Wes Roth', kind: 'youtube', category: 'videos', handle: 'youtube.com/@WesRoth', endpoint: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCqcbQf6yw5KzRoDDcZ_wBSw' },
+  { id: 'yt-mattwolfe', name: 'Matt Wolfe', kind: 'youtube', category: 'videos', handle: 'youtube.com/@mreflow', endpoint: 'https://www.youtube.com/feeds/videos.xml?channel_id=UChpleBmo18P08aKCIgti38g' },
+  { id: 'yt-aiexplained', name: 'AI Explained', kind: 'youtube', category: 'videos', handle: 'youtube.com/@aiexplained-official', endpoint: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCNJ1Ymd5yFuUPtn21xtRbbw' },
+  { id: 'yt-aicoffeebreak', name: 'AI Coffee Break', kind: 'youtube', category: 'videos', handle: 'youtube.com/@AICoffeeBreak', endpoint: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCobqgqE4i5Kf7wrxRxhToQA' },
+  { id: 'yt-deeplearningai', name: 'DeepLearningAI', kind: 'youtube', category: 'videos', handle: 'youtube.com/@DeepLearningAI', endpoint: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCcIXc5mJsHVYTZR1maL5l9w' },
+  { id: 'yt-sentdex', name: 'sentdex', kind: 'youtube', category: 'videos', handle: 'youtube.com/@sentdex', endpoint: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCfzlCWGWYyIQ0aLC5w48gBQ' },
+  { id: 'yt-yannic', name: 'Yannic Kilcher', kind: 'youtube', category: 'videos', handle: 'youtube.com/@YannicKilcher', endpoint: 'https://www.youtube.com/feeds/videos.xml?channel_id=UCZHmQk67mSJgfCCTn7xBfew' }
 ];
 
-const CATEGORIES = ['community', 'news', 'underground', 'releases', 'research'];
-const CATEGORY_TITLES = { community: 'Community', news: 'News', underground: 'Underground', releases: 'New releases', research: 'Research' };
+const CATEGORIES = ['community', 'news', 'videos', 'underground', 'releases', 'research'];
+const CATEGORY_TITLES = { community: 'Community', news: 'News', videos: 'Videos', underground: 'Underground', releases: 'New releases', research: 'Research' };
 const PROXIES = [
   url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
   url => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url)
@@ -79,6 +88,7 @@ const ICON = {
   x: ic('<path d="M4 4l16 16"/><path d="M20 4L4 20"/>'),
   release: ic('<path d="M12 2l2.4 6.2L21 10l-5 4.4L17.4 21 12 17.6 6.6 21 8 14.4 3 10l6.6-1.8z"/>'),
   rss: ic('<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>'),
+  youtube: ic('<polygon points="5 3 19 12 5 21 5 3"/>'),
   bookmark: ic('<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>'),
   arrowUp: ic('<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>'),
   comment: ic('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
@@ -512,7 +522,7 @@ async function loadRSSDirect(source) {
   return items;
 }
 
-async function loadRSS(source) {
+async function loadRSSViaChain(source) {
   const preferred = lastGoodMethod[source.id] || 'direct';
   if (preferred === 'direct') {
     try {
@@ -527,6 +537,13 @@ async function loadRSS(source) {
       return await loadRSSDirect(source);
     }
   }
+}
+
+async function loadRSS(source) {
+  const items = await loadRSSViaChain(source);
+  // Feeds that ride the RSS chain but aren't plain blogs (YouTube) keep their
+  // own kind, so cards show the right mark.
+  return source.kind === 'rss' ? items : items.map(item => Object.assign({}, item, { kind: source.kind }));
 }
 
 /// Hugging Face's daily papers API answers cross-origin directly, so research
@@ -885,7 +902,7 @@ function pruneRead() {
 // MARK: - Refresh
 
 // Fast, dependable sources paint first; Reddit and the X scrape come last.
-const SOURCE_PRIORITY = { hn: 0, hfPapers: 0, hfModels: 0, bluesky: 1, rss: 2, reddit: 3, x: 4 };
+const SOURCE_PRIORITY = { hn: 0, hfPapers: 0, hfModels: 0, bluesky: 1, rss: 2, youtube: 2, reddit: 3, x: 4 };
 
 function priorityValue(source) {
   const value = SOURCE_PRIORITY[source.kind];
@@ -1335,7 +1352,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.13';
+const APP_VERSION = '2026-10-28.14';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
