@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Pulse — source diagnostics</title>
+  <style>
+    body { background:#0A0C12; color:#F2F5FF; font:13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; margin:0; padding:16px; }
+    h1 { font-size:17px; margin:0 0 4px; }
+    p.note { color:rgba(255,255,255,.5); margin:0 0 14px; }
+    table { border-collapse:collapse; width:100%; }
+    td { padding:5px 6px; border-bottom:1px solid rgba(255,255,255,.08); vertical-align:top; }
+    td.name { font-weight:600; }
+    td.res.ok { color:#45D6B4; }
+    td.res.bad { color:#FF7A6B; }
+    td.extra { color:rgba(255,255,255,.45); font-size:12px; }
+  </style>
+</head>
+<body>
+  <h1>Source diagnostics</h1>
+  <p class="note">Each row fetches one endpoint straight from this browser and reports what came back.</p>
+  <table id="results"><tbody></tbody></table>
+  <script>
+    var PROXIES = [
+      ['allorigins', function (u) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); }],
+      ['allorigins-get', function (u) { return 'https://api.allorigins.win/get?url=' + encodeURIComponent(u); }],
+      ['codetabs', function (u) { return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u); }],
+      ['rss2json', function (u) { return 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(u); }],
+      ['corsproxy.io', function (u) { return 'https://corsproxy.io/?url=' + encodeURIComponent(u); }],
+      ['corsproxy.org', function (u) { return 'https://corsproxy.org/?' + encodeURIComponent(u); }]
+    ];
+
+    var DIRECT = [
+      ['HN Algolia', 'https://hn.algolia.com/api/v1/search_by_date?query=AI&tags=story&hitsPerPage=3'],
+      ['Reddit JSON', 'https://www.reddit.com/r/LocalLLaMA/top.json?t=day&limit=3&raw_json=1'],
+      ['Reddit RSS', 'https://www.reddit.com/r/LocalLLaMA/top.rss?t=day'],
+      ['HF daily papers API', 'https://huggingface.co/api/daily_papers?limit=3'],
+      ['Papers with Code API', 'https://paperswithcode.com/api/v1/papers/?page=1&items_per_page=3'],
+      ['arXiv Atom', 'https://export.arxiv.org/api/query?search_query=cat:cs.AI&max_results=2'],
+      ['The Verge feed', 'https://www.theverge.com/rss/ai-artificial-intelligence/index.xml'],
+      ['TechCrunch feed', 'https://techcrunch.com/category/artificial-intelligence/feed/'],
+      ['MIT Tech Review feed', 'https://www.technologyreview.com/topic/artificial-intelligence/feed'],
+      ['DeepMind feed', 'https://deepmind.google/blog/rss.xml'],
+      ['OpenAI feed', 'https://openai.com/news/rss.xml'],
+      ['Hugging Face blog', 'https://huggingface.co/blog/feed.xml'],
+      ['Google News RSS', 'https://news.google.com/rss/search?q=AI&hl=en-US&gl=US&ceid=US:en'],
+      ['The Decoder feed', 'https://the-decoder.com/feed/'],
+      ['VentureBeat feed', 'https://venturebeat.com/category/ai/feed/'],
+      ['Simon Willison feed', 'https://simonwillison.net/atom/everything/']
+    ];
+
+    var tbody = document.querySelector('#results tbody');
+
+    function row(name, sub) {
+      var tr = document.createElement('tr');
+      var tdName = document.createElement('td');
+      tdName.className = 'name';
+      tdName.textContent = name;
+      var tdRes = document.createElement('td');
+      tdRes.className = 'res';
+      var tdExtra = document.createElement('td');
+      tdExtra.className = 'extra';
+      tdExtra.textContent = sub || '';
+      tr.appendChild(tdName);
+      tr.appendChild(tdRes);
+      tr.appendChild(tdExtra);
+      tbody.appendChild(tr);
+      return tdRes;
+    }
+
+    function fetchWithTimeout(url, ms) {
+      var controller = new AbortController();
+      var timer = setTimeout(function () { controller.abort(); }, ms);
+      return fetch(url, { signal: controller.signal }).finally(function () { clearTimeout(timer); });
+    }
+
+    async function probe(url) {
+      var started = Date.now();
+      try {
+        var response = await fetchWithTimeout(url, 15000);
+        var text = await response.text();
+        return { ok: response.ok, status: response.status, bytes: text.length, ms: Date.now() - started, text: text };
+      } catch (err) {
+        return { ok: false, status: 0, bytes: 0, ms: Date.now() - started, error: (err && err.message) || 'failed' };
+      }
+    }
+
+    function showResult(td, result) {
+      if (result.ok) {
+        td.className = 'res ok';
+        td.textContent = 'OK ' + result.status + ' · ' + result.bytes + 'b · ' + result.ms + 'ms';
+      } else {
+        td.className = 'res bad';
+        td.textContent = (result.error ? result.error : 'HTTP ' + result.status) + ' · ' + result.ms + 'ms';
+      }
+    }
+
+    async function run() {
+      for (var i = 0; i < DIRECT.length; i++) {
+        var name = DIRECT[i][0];
+        var url = DIRECT[i][1];
+        var tdDirect = row(name + ' (direct)', url);
+        var direct = await probe(url);
+        showResult(tdDirect, direct);
+
+        var tdProxy = row(name + ' (proxies)', '');
+        var parts = [];
+        for (var p = 0; p < PROXIES.length; p++) {
+          var result = await probe(PROXIES[p][1](url));
+          parts.push(PROXIES[p][0] + ': ' + (result.ok ? 'OK ' + result.status + ' ' + result.bytes + 'b' : (result.error || 'HTTP ' + result.status)));
+        }
+        tdProxy.className = 'res extra';
+        tdProxy.textContent = parts.join(' | ');
+        await new Promise(function (r) { setTimeout(r, 250); });
+      }
+      document.title = 'AI Pulse diagnostics — done';
+    }
+
+    run();
+  </script>
+</body>
+</html>
