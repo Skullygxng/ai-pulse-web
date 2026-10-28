@@ -217,7 +217,7 @@ async function loadHN() {
 
 const REDDIT_SELF = /^https?:\/\/([a-z0-9-]+\.)?(reddit\.com|redd\.it)/i;
 
-async function loadReddit(sub) {
+async function loadRedditJSON(sub) {
   const data = await fetchJSON('https://www.reddit.com/r/' + sub + '/top.json?t=day&limit=40&raw_json=1');
   const posts = ((data.data && data.data.children) || []).map(c => c.data).filter(p => p && !p.stickied && p.title);
   return posts.map(p => {
@@ -240,6 +240,64 @@ async function loadReddit(sub) {
       author: p.author || null
     };
   });
+}
+
+/// RSS2JSON reads feeds on its own servers, so a local network block or a
+/// dead proxy can't stop it. Free tier, no key.
+async function fetchViaRSS2JSON(url) {
+  const response = await fetchWithTimeout('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(url), 20000);
+  if (!response.ok) throw new Error('HTTP ' + response.status);
+  const data = await response.json();
+  if (data.status !== 'ok' || !data.feed) throw new Error(data.message || 'Feed rejected');
+  return data;
+}
+
+function stripHtmlish(html) {
+  SCRATCH.innerHTML = html || '';
+  return SCRATCH.textContent.replace(/\s+/g, ' ').trim().slice(0, 240);
+}
+
+function itemsFromRSS2JSON(data, source) {
+  return (data.items || []).slice(0, 40).map(item => {
+    let published = item.pubDate ? new Date(item.pubDate) : new Date();
+    if (isNaN(published.getTime())) published = new Date();
+    let title = decodeEntities(item.title || '');
+    if (source.stripsOutletSuffix) title = title.replace(/\s+-\s+[^-]+$/, '');
+    return {
+      id: source.id + '-' + stableHash(item.link || title),
+      title: title,
+      summary: stripHtmlish(item.description || item.content),
+      articleURL: /^https?:\/\//i.test(item.link || '') ? item.link : null,
+      discussionURL: null,
+      sourceID: source.id,
+      sourceName: source.name,
+      category: source.category,
+      kind: source.kind,
+      publishedAt: published,
+      points: 0,
+      commentCount: 0,
+      author: item.author || null
+    };
+  }).filter(item => item.title);
+}
+
+function redditSource(sub) {
+  return { id: 'reddit-' + sub.toLowerCase(), name: 'r/' + sub, kind: 'reddit', category: 'community' };
+}
+
+/// Reddit's JSON API from the browser works on most networks; where it is
+/// blocked, its RSS feed fetched server-side still gets the posts through.
+async function loadRedditRSS(sub) {
+  const data = await fetchViaRSS2JSON('https://www.reddit.com/r/' + sub + '/top.rss?t=day');
+  return itemsFromRSS2JSON(data, redditSource(sub));
+}
+
+async function loadReddit(sub) {
+  try {
+    return await loadRedditJSON(sub);
+  } catch (jsonError) {
+    return await loadRedditRSS(sub);
+  }
 }
 
 function childByLocalName(node, names) {
@@ -302,7 +360,12 @@ function parseFeed(xmlText, source) {
 }
 
 async function loadRSS(source) {
-  return parseFeed(await fetchText(source.endpoint), source);
+  try {
+    const data = await fetchViaRSS2JSON(source.endpoint);
+    return itemsFromRSS2JSON(data, source);
+  } catch (rss2jsonError) {
+    return parseFeed(await fetchText(source.endpoint), source);
+  }
 }
 
 async function loadSource(source) {
