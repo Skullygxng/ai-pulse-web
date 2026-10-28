@@ -589,7 +589,16 @@ async function loadYoutubeFromInvidious(source) {
   throw lastError;
 }
 
-async function loadYoutube(source) {
+/// The nine channels fire together, and the services in their chain
+/// rate-limit bursts, so each channel starts slightly after the last.
+const YOUTUBE_STAGGER = new Map(SOURCES.filter(s => s.kind === 'youtube').map((s, i) => [s.id, i * 700]));
+
+function loadYoutube(source) {
+  const wait = YOUTUBE_STAGGER.get(source.id) || 0;
+  return wait ? delay(wait).then(() => loadYoutubeNow(source)) : loadYoutubeNow(source);
+}
+
+async function loadYoutubeNow(source) {
   if (lastGoodMethod[source.id] === 'invidious') {
     try {
       return await loadYoutubeFromInvidious(source);
@@ -912,7 +921,7 @@ const state = {
 
 function persist() {
   const snapshot = {
-    items: state.items.slice(0, 300).map(item => Object.assign({}, item, { publishedAt: item.publishedAt.toISOString() })),
+    items: state.items.slice(0, 600).map(item => Object.assign({}, item, { publishedAt: item.publishedAt.toISOString() })),
     saved: state.saved.map(item => Object.assign({}, item, { publishedAt: item.publishedAt.toISOString() })),
     readIDs: Array.from(state.readIDs),
     enabled: Array.from(state.enabled),
@@ -1411,7 +1420,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.15';
+const APP_VERSION = '2026-10-28.16';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
