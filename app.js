@@ -17,6 +17,7 @@ const SOURCES = [
   { id: 'reddit-claudeai', name: 'r/ClaudeAI', kind: 'reddit', category: 'community', handle: 'reddit.com/r/ClaudeAI', endpoint: 'ClaudeAI' },
   { id: 'reddit-singularity', name: 'r/singularity', kind: 'reddit', category: 'community', handle: 'reddit.com/r/singularity', endpoint: 'singularity' },
   { id: 'bluesky', name: 'Bluesky voices', kind: 'bluesky', category: 'community', handle: 'bsky.app', endpoint: '' },
+  { id: 'x', name: 'X (scraped)', kind: 'x', category: 'community', handle: 'x.com', endpoint: '' },
   { id: 'google-news', name: 'Google News', kind: 'rss', category: 'news', handle: 'news.google.com', endpoint: 'https://news.google.com/rss/search?q=%22artificial+intelligence%22+OR+LLM+OR+%22open+source+AI%22+when%3A2d&hl=en-US&gl=US&ceid=US:en', stripsOutletSuffix: true },
   { id: 'openai', name: 'OpenAI', kind: 'rss', category: 'news', handle: 'openai.com', endpoint: 'https://openai.com/news/rss.xml' },
   { id: 'deepmind', name: 'Google DeepMind', kind: 'rss', category: 'news', handle: 'deepmind.google', endpoint: 'https://deepmind.google/blog/rss.xml' },
@@ -65,6 +66,7 @@ const ICON = {
   hn: ic('<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'),
   reddit: ic('<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>'),
   bluesky: ic('<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>'),
+  x: ic('<path d="M4 4l16 16"/><path d="M20 4L4 20"/>'),
   rss: ic('<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>'),
   bookmark: ic('<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>'),
   arrowUp: ic('<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>'),
@@ -505,11 +507,83 @@ async function loadBluesky() {
   return items.slice(0, 40);
 }
 
+/// X has no free API, and the Nitter mirrors are gone. The free reader at
+/// r.jina.ai will still render a public X profile to text, so that is what this
+/// scrapes. It is best effort: no metrics, and if X or the reader refuses the
+/// request the source simply reports an error.
+const X_ACCOUNTS = ['OpenAI', 'AnthropicAI', 'GoogleDeepMind', 'huggingface', 'sama'];
+
+function cleanXLine(line) {
+  return line
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/!\[[^\]]*\]/g, ' ')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/\bblob:https?:\/\/\S+/g, ' ')
+    .replace(/\bImage \d+:[^)]*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseXProfile(markdown, handle) {
+  const lines = markdown.split('\n');
+  const texts = [];
+  const skip = /^(pinned|who to follow|trends|most popular|last seen|people also)/i;
+
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith('*')) continue;              // tweets arrive as bullets
+    const text = cleanXLine(trimmed.replace(/^\*\s*/, '')).replace(/^Image \d+:[^)]*/, '').trim();
+    if (text.length < 40 || skip.test(text)) continue;
+    texts.push(text.slice(0, 220));
+  }
+
+  return Array.from(new Set(texts)).slice(0, 8).map(text => {
+    const id = 'x-' + handle.toLowerCase() + '-' + stableHash(text);
+    return {
+      id: id,
+      title: text,
+      summary: '',
+      articleURL: 'https://x.com/' + handle,
+      discussionURL: 'https://x.com/' + handle,
+      sourceID: 'x',
+      sourceName: '@' + handle + ' · X',
+      category: 'community',
+      kind: 'x',
+      publishedAt: new Date(),
+      points: 0,
+      commentCount: 0,
+      author: '@' + handle
+    };
+  });
+}
+
+async function fetchXAccount(handle) {
+  const reader = 'https://r.jina.ai/https://x.com/' + encodeURIComponent(handle);
+  const markdown = await fetchText(reader);
+  return parseXProfile(markdown, handle);
+}
+
+async function loadX() {
+  const settled = await Promise.allSettled(X_ACCOUNTS.map(fetchXAccount));
+  const items = [];
+  for (const result of settled) {
+    if (result.status === 'fulfilled') items.push(...result.value);
+  }
+  if (items.length === 0) {
+    const failure = settled.find(result => result.status === 'rejected');
+    if (failure) throw failure.reason;
+    throw new Error('X blocked the scrape');
+  }
+  return items;
+}
+
 async function loadSource(source) {
   if (source.kind === 'hn') return loadHN();
   if (source.kind === 'reddit') return loadReddit(source.endpoint);
   if (source.kind === 'hfPapers') return loadHFPapers();
   if (source.kind === 'bluesky') return loadBluesky();
+  if (source.kind === 'x') return loadX();
   return loadRSS(source);
 }
 
@@ -975,7 +1049,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.5';
+const APP_VERSION = '2026-10-28.6';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');

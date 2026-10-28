@@ -36,6 +36,6 @@ Browsers can only read responses from servers that allow cross-origin requests, 
 
 Some networks (corporate VPNs, some carrier routes) block Reddit and third-party proxies outright. `diagnostics.html` opens a page that tests each feed and proxy from your own browser, so it's easy to see what a given network can reach.
 
-**On X:** there is no free way left to read a timeline. X's API is paid, the Nitter mirrors that used to relay tweets are suspended or bot-walled, and the public embed endpoint is rate-limited. The Bluesky source covers the same ground — its public API is free, needs no key, and the researchers who drive this conversation post there too. To follow whole X accounts you'd need an X API key or an RSS bridge service; adding the handles in `BLUESKY_ACCOUNTS` (app.js) is free and needs nothing.
+**On X:** the free routes are gone — X's API is paid, the Nitter mirrors are suspended or bot-walled, RSSHub's Twitter bridge was removed and the public embed endpoint rate-limits. Two things still work and both are in the app: an **X (scraped)** source that renders public profiles through the free [Jina reader](https://r.jina.ai/) (best effort — headlines only, no metrics, and it shows an error if X refuses), and **Bluesky voices**, whose public API is free, key-less and carries the same conversation. Account handles for both live in `X_ACCOUNTS` and `BLUESKY_ACCOUNTS` in app.js.
 
 Your feed, saved stories, read history and source toggles live in `localStorage` on your device. Nothing is sent anywhere.
