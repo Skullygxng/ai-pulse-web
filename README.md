@@ -5,10 +5,10 @@ The web version of AI Pulse: AI news, papers and community chatter from across t
 ## What it pulls in
 
 - **Community** — Hacker News (via the Algolia API), Bluesky voices (Simon Willison, Ethan Mollick, Nathan Lambert and Andrej Karpathy, through Bluesky's free public API) and r/LocalLLaMA, r/MachineLearning, r/artificial, r/OpenAI, r/ClaudeAI and r/singularity.
-- **News** — Google News, OpenAI, Google DeepMind, Hugging Face, The Verge, TechCrunch, MIT Tech Review, VentureBeat, The Decoder and Simon Willison.
+- **News** — Google News, OpenAI, Google DeepMind, Hugging Face, The Verge, TechCrunch, MIT Tech Review, VentureBeat, The Decoder, Simon Willison, Google Research, Microsoft Research, Import AI, Interconnects, Latent Space and One Useful Thing.
 - **Research** — Hugging Face Daily Papers, and arXiv cs.AI, cs.LG and cs.CL (the long-tail arXiv ones start off).
 
-Stories are de-duplicated across sources, ranked by freshness decayed over time and lifted by community engagement, and the general-audience firehoses are filtered to stories that are actually about AI.
+Stories are de-duplicated across sources, ranked by freshness decayed over time and lifted by community engagement. Hacker News is fetched broadly and filtered to AI by topic keywords rather than by asking the API for the word "AI", so stories that phrase it differently still land in the feed. The list renders a screenful at a time and extends as you scroll, and pulling down at the top refreshes.
 
 ## Running it
 

@@ -28,6 +28,12 @@ const SOURCES = [
   { id: 'venturebeat-ai', name: 'VentureBeat', kind: 'rss', category: 'news', handle: 'venturebeat.com', endpoint: 'https://venturebeat.com/category/ai/feed/' },
   { id: 'the-decoder', name: 'The Decoder', kind: 'rss', category: 'news', handle: 'the-decoder.com', endpoint: 'https://the-decoder.com/feed/' },
   { id: 'simon-willison', name: 'Simon Willison', kind: 'rss', category: 'news', handle: 'simonwillison.net', endpoint: 'https://simonwillison.net/atom/everything/' },
+  { id: 'google-research', name: 'Google Research', kind: 'rss', category: 'news', handle: 'research.google', endpoint: 'https://research.google/blog/rss/' },
+  { id: 'msr', name: 'Microsoft Research', kind: 'rss', category: 'news', handle: 'microsoft.com/research', endpoint: 'https://www.microsoft.com/en-us/research/feed/' },
+  { id: 'import-ai', name: 'Import AI', kind: 'rss', category: 'news', handle: 'importai.substack.com', endpoint: 'https://importai.substack.com/feed' },
+  { id: 'interconnects', name: 'Interconnects', kind: 'rss', category: 'news', handle: 'interconnects.ai', endpoint: 'https://www.interconnects.ai/feed' },
+  { id: 'latent-space', name: 'Latent Space', kind: 'rss', category: 'news', handle: 'latent.space', endpoint: 'https://www.latent.space/feed' },
+  { id: 'one-useful-thing', name: 'One Useful Thing', kind: 'rss', category: 'news', handle: 'oneusefulthing.org', endpoint: 'https://www.oneusefulthing.org/feed' },
   { id: 'hf-papers', name: 'HF Daily Papers', kind: 'hfPapers', category: 'research', handle: 'huggingface.co/papers', endpoint: '' },
   { id: 'arxiv-ai', name: 'arXiv cs.AI', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/api/query?search_query=cat:cs.AI&sortBy=submittedDate&sortOrder=descending&max_results=30' },
   { id: 'arxiv-lg', name: 'arXiv cs.LG', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/api/query?search_query=cat:cs.LG&sortBy=submittedDate&sortOrder=descending&max_results=30' },
@@ -131,12 +137,15 @@ function compactCount(value) {
 
 const AI_PHRASES = [
   'artificial intelligence', 'machine learning', 'deep learning', 'language model',
-  'neural network', 'hugging face', 'open source model', 'open-weight', 'open weight',
-  'context window', 'fine-tune', 'fine tuned', 'reinforcement learning', 'diffusion model',
-  'text-to-image', 'reasoning model', 'mixture of experts', 'ai safety', 'alignment research',
-  'training run', 'training cluster', 'foundation model', 'synthetic data', 'model weights',
-  'inference cost', 'sam altman', 'yann lecun', 'ai agent', 'ai agents', 'ai model',
-  'ai models', 'ai startup', 'ai company', 'ai chip', 'ai chips'
+  'neural network', 'hugging face', 'open source model', 'open source ai', 'open-weight',
+  'open weight', 'context window', 'fine-tune', 'fine tuned', 'reinforcement learning',
+  'diffusion model', 'text-to-image', 'text to image', 'reasoning model', 'mixture of experts',
+  'ai safety', 'alignment research', 'training run', 'training cluster', 'foundation model',
+  'synthetic data', 'model weights', 'inference cost', 'sam altman', 'yann lecun',
+  'ai agent', 'ai agents', 'ai model', 'ai models', 'ai startup', 'ai company', 'ai chip',
+  'ai chips', 'ai research', 'ai lab', 'agentic', 'world model', 'test-time compute',
+  'retrieval augmented', 'chain of thought', 'prompt engineering', 'vision language',
+  'speech recognition', 'code assistant', 'llm inference', 'model training'
 ];
 
 const AI_KEYWORDS = new Set([
@@ -146,7 +155,11 @@ const AI_KEYWORDS = new Set([
   'diffusion', 'inference', 'embedding', 'embeddings', 'dataset', 'datasets', 'benchmark',
   'benchmarks', 'superintelligence', 'quantization', 'quantized', 'multimodal', 'tokenizer',
   'finetune', 'finetuning', 'gpu', 'gpus', 'neural', 'langchain', 'rag', 'huggingface',
-  'karpathy', 'sora', 'nvidia'
+  'karpathy', 'sora', 'nvidia', 'agent', 'agents', 'chatbot', 'relu', 'weights',
+  'pretraining', 'finetuned', 'tokens', 'hallucination', 'alignment', 'deepseek',
+  'cohere', 'perplexity', 'runway', 'elevenlabs', 'stability', 'suno', 'cursor',
+  'windsurf', 'devin', 'replit', 'gemma', 'phi', 'olmo', 'granite', 'nemotron',
+  'mixture', 'multimodal', 'embedding', 'vector', 'embeddings', 'reasoning'
 ]);
 
 function isAIRelevant(title) {
@@ -207,8 +220,17 @@ async function fetchJSON(url) {
 // MARK: - Source loaders
 
 async function loadHN() {
-  const data = await fetchJSON('https://hn.algolia.com/api/v1/search_by_date?query=AI&tags=story&hitsPerPage=100');
-  const hits = (data.hits || []).filter(h => h.title && isAIRelevant(h.title)).slice(0, 60);
+  // Ask for everything popular in the window rather than for the literal word
+  // "AI", then keep the AI stories — otherwise "Anthropic ships Claude" or
+  // "diffusion model" get missed for not containing the keyword.
+  const since = Math.floor((Date.now() - 10 * 24 * 60 * 60 * 1000) / 1000);
+  const data = await fetchJSON(
+    'https://hn.algolia.com/api/v1/search_by_date?tags=story' +
+    '&numericFilters=created_at_i%3E' + since + '%2Cpoints%3E15&hitsPerPage=300'
+  );
+  const hits = (data.hits || [])
+    .filter(hit => h.title && isAIRelevant(hit.title + ' ' + (hit.story_text || '')))
+    .slice(0, 80);
   return hits.map(h => {
     const discussion = 'https://news.ycombinator.com/item?id=' + h.objectID;
     const article = h.url && !h.url.startsWith('https://news.ycombinator.com') ? h.url : null;
@@ -687,7 +709,9 @@ const state = {
   filter: 'all',
   sort: 'forYou',
   query: '',
-  view: 'feed'
+  view: 'feed',
+  renderLimit: 30,
+  visibleCount: 0
 };
 
 function persist() {
@@ -951,16 +975,24 @@ function renderFeed() {
     return;
   }
   const items = visibleItems();
+  state.visibleCount = items.length;
   if (items.length === 0) {
     feedList.innerHTML =
       '<div class="empty"><h2>' +
       (state.query ? 'No matches' : 'Nothing here yet') +
       '</h2><p>' +
-      (state.query ? 'Try a different search.' : 'Tap refresh, or turn more sources on in the Sources tab.') +
+      (state.query ? 'Try a different search.' : 'Pull down to refresh, or turn more sources on in the Sources tab.') +
       '</p></div>';
     return;
   }
-  feedList.innerHTML = items.map(item => cardHTML(item, false)).join('');
+  // Only a screenful or two goes into the DOM at a time; more is appended as
+  // the reader scrolls, which keeps the first paint quick.
+  const shown = items.slice(0, state.renderLimit);
+  let html = shown.map(item => cardHTML(item, false)).join('');
+  if (items.length > shown.length) {
+    html += '<button class="load-more" type="button">Show more stories</button>';
+  }
+  feedList.innerHTML = html;
 }
 
 function renderSaved() {
@@ -1055,6 +1087,7 @@ document.getElementById('filter-chips').addEventListener('click', event => {
   const chip = event.target.closest('.chip');
   if (!chip) return;
   state.filter = chip.dataset.filter;
+  state.renderLimit = 30;
   renderAll();
 });
 
@@ -1062,6 +1095,7 @@ document.getElementById('sort-seg').addEventListener('click', event => {
   const button = event.target.closest('.seg-btn');
   if (!button) return;
   state.sort = button.dataset.sort;
+  state.renderLimit = 30;
   renderAll();
 });
 
@@ -1069,6 +1103,7 @@ document.getElementById('mark-read-btn').addEventListener('click', markAllRead);
 
 searchInput.addEventListener('input', () => {
   state.query = searchInput.value;
+  state.renderLimit = 30;
   renderFeed();
 });
 
@@ -1101,6 +1136,65 @@ function handleCardClick(event) {
 feedList.addEventListener('click', handleCardClick);
 savedList.addEventListener('click', handleCardClick);
 
+// Only the first page of stories is in the DOM, so both ways of asking for more
+// just extend it.
+feedList.addEventListener('click', event => {
+  if (!event.target.closest('.load-more')) return;
+  state.renderLimit += 30;
+  renderFeed();
+});
+
+const feedScroller = document.getElementById('view-feed');
+
+feedScroller.addEventListener('scroll', () => {
+  if (state.renderLimit >= state.visibleCount) return;
+  if (feedScroller.scrollTop + feedScroller.clientHeight < feedScroller.scrollHeight - 700) return;
+  state.renderLimit += 30;
+  renderFeed();
+}, { passive: true });
+
+// Pull the feed down at the top to refresh it — the lists scroll inside the
+// app frame, so the browser's own pull-to-refresh never fires.
+const pullHint = document.getElementById('pull-hint');
+const PULL_THRESHOLD = 70;
+let pullStartY = null;
+let pullDistance = 0;
+
+function setPullHint(progress) {
+  if (!pullHint) return;
+  if (progress <= 0) {
+    pullHint.classList.remove('is-on');
+    return;
+  }
+  pullHint.classList.add('is-on');
+  pullHint.textContent = progress >= 1 ? 'Release to refresh' : 'Pull to refresh';
+}
+
+feedScroller.addEventListener('touchstart', event => {
+  pullStartY = feedScroller.scrollTop <= 0 ? event.touches[0].clientY : null;
+  pullDistance = 0;
+}, { passive: true });
+
+feedScroller.addEventListener('touchmove', event => {
+  if (pullStartY === null || state.isRefreshing) return;
+  pullDistance = event.touches[0].clientY - pullStartY;
+  if (pullDistance > 0) setPullHint(Math.min(1, pullDistance / PULL_THRESHOLD));
+}, { passive: true });
+
+feedScroller.addEventListener('touchend', () => {
+  const shouldRefresh = pullDistance > PULL_THRESHOLD && !state.isRefreshing;
+  setPullHint(0);
+  pullStartY = null;
+  pullDistance = 0;
+  if (shouldRefresh) refresh();
+}, { passive: true });
+
+feedScroller.addEventListener('touchcancel', () => {
+  setPullHint(0);
+  pullStartY = null;
+  pullDistance = 0;
+}, { passive: true });
+
 sourcesList.addEventListener('change', event => {
   const input = event.target.closest('input[data-source]');
   if (!input) return;
@@ -1115,7 +1209,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.8';
+const APP_VERSION = '2026-10-28.9';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
