@@ -1144,43 +1144,57 @@ function visibleItems() {
   return items;
 }
 
-function youtubeId(item) {
-  const match = (item.articleURL || '').match(/[?&]v=([\w-]{6,})/);
+/// Pulls a video id out of every shape the feeds and mirrors use.
+function youtubeIdFromURL(url) {
+  const text = String(url || '');
+  let match = text.match(/[?&]v=([\w-]{6,})/);
+  if (match) return match[1];
+  match = text.match(/(?:youtu\.be|youtube(?:-nocookie)?\.com\/(?:shorts|embed|live|v))\/([\w-]{6,})/i);
   return match ? match[1] : '';
+}
+
+function youtubeId(item) {
+  return youtubeIdFromURL(item.articleURL || '');
+}
+
+function isVideoItem(item) {
+  return item.kind === 'youtube' || item.category === 'videos' || !!youtubeId(item);
 }
 
 function cardHTML(item, isSavedCard) {
   const isRead = state.readIDs.has(item.id);
   const isSaved = state.savedIDs.has(item.id);
   const openURL = item.articleURL || item.discussionURL || '';
-  const videoID = item.kind === 'youtube' ? youtubeId(item) : '';
+  const isVideo = item.kind === 'youtube' || item.category === 'videos';
+  const videoID = youtubeId(item);
   const metrics = [];
   if (item.points > 0) metrics.push('<span class="metric">' + ICON.arrowUp + compactCount(item.points) + '</span>');
   if (item.commentCount > 0) metrics.push('<span class="metric">' + ICON.comment + compactCount(item.commentCount) + '</span>');
 
-  const discussion = (!videoID && item.discussionURL)
+  const discussion = (!isVideo && item.discussionURL)
     ? '<a class="discussion-ctl" href="' + escapeAttr(item.discussionURL) + '" target="_blank" rel="noopener">' + ICON.link + 'Discussion</a>'
     : '';
 
-  // Videos get a thumbnail and play in the app; their title is not a link, so a
-  // tap anywhere on the card plays instead of handing off to the YouTube app.
+  // Videos never carry a link: the whole card opens the in-app player, so iOS
+  // never gets the chance to hand a youtube.com address to the YouTube app.
   const thumb = videoID
     ? '<div class="video-thumb"><img src="https://i.ytimg.com/vi/' + escapeAttr(videoID) +
       '/hqdefault.jpg" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">' +
       '<span class="play-badge" aria-hidden="true">' + ICON.play + '</span></div>'
     : '';
 
-  const titleHTML = videoID
+  const titleHTML = item.kind === 'youtube'
     ? '<h3 class="card-title">' + escapeHtml(item.title) + '</h3>'
     : '<h3 class="card-title"><a href="' + escapeAttr(openURL || '#') + '" target="_blank" rel="noopener">' + escapeHtml(item.title) + '</a></h3>';
 
-  const playCtl = videoID
+  const playCtl = item.kind === 'youtube'
     ? '<span class="watch-ctl">' + ICON.play + 'Play</span>'
     : '';
 
   return (
-    '<article class="card' + (isRead ? ' is-read' : '') + (videoID ? ' is-video' : '') +
-      '" data-id="' + escapeAttr(item.id) + '" data-url="' + escapeAttr(openURL) + '" data-video="' + escapeAttr(videoID) + '">' +
+    '<article class="card' + (isRead ? ' is-read' : '') + (isVideo ? ' is-video' : '') +
+      '" data-id="' + escapeAttr(item.id) + '" data-url="' + escapeAttr(openURL) +
+      '" data-video="' + escapeAttr(isVideo ? (videoID || 'pending') : '') + '">' +
       '<div class="card-head">' +
         '<span class="glyph glyph-' + item.category + '">' + (ICON[item.kind] || ICON.rss) + '</span>' +
         '<span class="card-source">' + escapeHtml(item.sourceName) + '</span>' +
@@ -1360,6 +1374,7 @@ function handleCardClick(event) {
 
   // Video cards play inside the app; anything else opens the original page.
   if (card.dataset.video) {
+    event.preventDefault();
     const item = findItem(card.dataset.id);
     if (item) {
       markRead(item.id);
@@ -1460,7 +1475,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.17';
+const APP_VERSION = '2026-10-28.18';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
@@ -1534,19 +1549,24 @@ function findItem(id) {
 }
 
 function openVideo(item) {
-  const id = youtubeId(item);
-  if (!id) {
-    if (item.articleURL) window.open(item.articleURL, '_blank', 'noopener');
-    return;
-  }
   if (!videoSheet || !videoFrame) return;
 
-  videoTitle.textContent = item.title;
-  videoSub.textContent = item.sourceName + ' · ' + pulseRelative(item.publishedAt);
+  const id = youtubeId(item);
+  videoTitle.textContent = item.title || 'Video';
+  videoSub.textContent = item.sourceName
+    ? item.sourceName + ' · ' + pulseRelative(item.publishedAt || new Date())
+    : '';
   videoOpen.href = item.articleURL || '#';
-  // The privacy-friendly embed keeps playback in the app instead of handing the
-  // link to the YouTube app.
-  videoFrame.src = 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&playsinline=1&rel=0&modestbranding=1';
+
+  if (id) {
+    // The privacy-friendly embed keeps playback in the app instead of handing
+    // the address to the YouTube app.
+    videoFrame.src = 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&playsinline=1&rel=0&modestbranding=1';
+  } else {
+    videoFrame.src = 'about:blank';
+    videoSub.textContent = "This one can't play inside the app — use \"Open on YouTube\".";
+  }
+
   videoSheet.hidden = false;
 }
 
@@ -1565,6 +1585,29 @@ if (videoSheet) {
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && videoSheet && !videoSheet.hidden) closeVideo();
 });
+
+// Safety net: any YouTube address left inside the app is played here rather
+// than handed to the YouTube app by iOS.
+document.addEventListener('click', event => {
+  if (event.target.closest('#video-sheet')) return;
+  const link = event.target.closest('a[href]');
+  if (!link) return;
+
+  const href = link.getAttribute('href') || '';
+  if (!/(youtube\.com|youtu\.be)/i.test(href)) return;
+
+  const id = youtubeIdFromURL(href);
+  if (!id) return;
+
+  event.preventDefault();
+  openVideo({
+    title: link.textContent.trim() || 'Video',
+    articleURL: href,
+    sourceName: 'YouTube',
+    publishedAt: new Date(),
+    id: 'yt-' + id
+  });
+}, true);
 
 // MARK: - Start
 
