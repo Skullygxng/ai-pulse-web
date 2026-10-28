@@ -6,6 +6,8 @@ The web version of AI Pulse: AI news, papers and community chatter from across t
 
 - **Community** — Hacker News (via the Algolia API), Bluesky voices (Simon Willison, Ethan Mollick, Nathan Lambert and Andrej Karpathy, through Bluesky's free public API) and r/LocalLLaMA, r/MachineLearning, r/artificial, r/OpenAI, r/ClaudeAI and r/singularity.
 - **News** — Google News, OpenAI, Google DeepMind, Hugging Face, The Verge, TechCrunch, MIT Tech Review, VentureBeat, The Decoder, Simon Willison, Google Research, Microsoft Research, Import AI, Interconnects, Latent Space and One Useful Thing.
+- **Underground** — LessWrong, The Gradient and Lobsters · ai, for the forums and long-form writing the mainstream never covers.
+- **New releases** — Hugging Face's trending models API, which surfaces every open model launch within hours.
 - **Research** — Hugging Face Daily Papers, and arXiv cs.AI, cs.LG and cs.CL (the long-tail arXiv ones start off).
 
 Stories are de-duplicated across sources, ranked by freshness decayed over time and lifted by community engagement. Hacker News is fetched broadly and filtered to AI by topic keywords rather than by asking the API for the word "AI", so stories that phrase it differently still land in the feed. The list renders a screenful at a time and extends as you scroll, and pulling down at the top refreshes.
@@ -32,7 +34,7 @@ To ship a change, bump `version` in `version.json` and `APP_VERSION` in `app.js`
 
 ## How fetching works
 
-Browsers can only read responses from servers that allow cross-origin requests, so each source is tried over several paths: a direct request first, then public CORS proxies (AllOrigins, CodeTabs), then [RSS2JSON](https://rss2json.com/), which reads the feed server-side. The app remembers the path each source last succeeded with, tries that first, and gives a service that rate-limits a ten-minute rest. Every request is timed as a whole — including reading the body — so a stalled proxy can't hang a refresh. Reddit posts come from its JSON API when reachable and fall back to its RSS feed otherwise. A source that fails keeps its last stories instead of emptying the feed, and its error shows in the Sources tab.
+Browsers can only read responses from servers that allow cross-origin requests, so each source is tried over several paths: a direct request first, then public CORS proxies (AllOrigins, CodeTabs), then [RSS2JSON](https://rss2json.com/), which reads the feed server-side. A feed that still refuses is finally read through the [Jina reader](https://r.jina.ai/), whose rendered page is parsed back into headlines and dates. The app remembers the path each source last succeeded with, tries that first, and gives a service that rate-limits a ten-minute rest. Every request is timed as a whole — including reading the body — so a stalled proxy can't hang a refresh. Reddit posts come from its JSON API when reachable and fall back to its RSS feed otherwise. A source that fails keeps its last stories instead of emptying the feed, and its error shows in the Sources tab.
 
 Some networks (corporate VPNs, some carrier routes) block Reddit and third-party proxies outright. `diagnostics.html` opens a page that tests each feed and proxy from your own browser, so it's easy to see what a given network can reach.
 

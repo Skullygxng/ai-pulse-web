@@ -34,14 +34,18 @@ const SOURCES = [
   { id: 'interconnects', name: 'Interconnects', kind: 'rss', category: 'news', handle: 'interconnects.ai', endpoint: 'https://www.interconnects.ai/feed' },
   { id: 'latent-space', name: 'Latent Space', kind: 'rss', category: 'news', handle: 'latent.space', endpoint: 'https://www.latent.space/feed' },
   { id: 'one-useful-thing', name: 'One Useful Thing', kind: 'rss', category: 'news', handle: 'oneusefulthing.org', endpoint: 'https://www.oneusefulthing.org/feed' },
+  { id: 'lesswrong', name: 'LessWrong', kind: 'rss', category: 'underground', handle: 'lesswrong.com', endpoint: 'https://www.lesswrong.com/feed.xml?view=tag-rss&tag=AI' },
+  { id: 'gradient', name: 'The Gradient', kind: 'rss', category: 'underground', handle: 'thegradient.pub', endpoint: 'https://thegradient.pub/rss/' },
+  { id: 'lobsters-ai', name: 'Lobsters · ai', kind: 'rss', category: 'underground', handle: 'lobste.rs/t/ai', endpoint: 'https://lobste.rs/t/ai.rss' },
+  { id: 'hf-models', name: 'HF New Models', kind: 'hfModels', category: 'releases', handle: 'huggingface.co/models', endpoint: '' },
   { id: 'hf-papers', name: 'HF Daily Papers', kind: 'hfPapers', category: 'research', handle: 'huggingface.co/papers', endpoint: '' },
   { id: 'arxiv-ai', name: 'arXiv cs.AI', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/api/query?search_query=cat:cs.AI&sortBy=submittedDate&sortOrder=descending&max_results=30' },
   { id: 'arxiv-lg', name: 'arXiv cs.LG', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/api/query?search_query=cat:cs.LG&sortBy=submittedDate&sortOrder=descending&max_results=30' },
   { id: 'arxiv-cl', name: 'arXiv cs.CL', kind: 'rss', category: 'research', handle: 'arxiv.org', endpoint: 'https://export.arxiv.org/api/query?search_query=cat:cs.CL&sortBy=submittedDate&sortOrder=descending&max_results=30' }
 ];
 
-const CATEGORIES = ['community', 'news', 'research'];
-const CATEGORY_TITLES = { community: 'Community', news: 'News', research: 'Research' };
+const CATEGORIES = ['community', 'news', 'underground', 'releases', 'research'];
+const CATEGORY_TITLES = { community: 'Community', news: 'News', underground: 'Underground', releases: 'New releases', research: 'Research' };
 const PROXIES = [
   url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
   url => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url)
@@ -73,6 +77,7 @@ const ICON = {
   reddit: ic('<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>'),
   bluesky: ic('<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>'),
   x: ic('<path d="M4 4l16 16"/><path d="M20 4L4 20"/>'),
+  release: ic('<path d="M12 2l2.4 6.2L21 10l-5 4.4L17.4 21 12 17.6 6.6 21 8 14.4 3 10l6.6-1.8z"/>'),
   rss: ic('<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>'),
   bookmark: ic('<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>'),
   arrowUp: ic('<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>'),
@@ -211,6 +216,15 @@ async function fetchText(url) {
     }
     throw lastError;
   }
+}
+
+/// A server-side reader that answers for feeds the browser and the proxies
+/// can't reach. It returns the page as text, not as XML, so the caller parses
+/// whichever shape it got.
+async function fetchReader(url) {
+  const result = await fetchResource('https://r.jina.ai/' + url, 12000);
+  if (!result.ok || !result.body) throw new Error('Reader unavailable');
+  return result.body;
 }
 
 async function fetchJSON(url) {
@@ -414,6 +428,52 @@ function parseFeed(xmlText, source) {
   }).filter(item => item.title);
 }
 
+/// The reader renders a feed page as markdown: "### [Headline](link)" lines with
+/// the published date just under them. That is enough to rebuild a feed.
+function parseFeedMarkdown(markdown, source) {
+  const lines = markdown.split('\n');
+  const items = [];
+  const seen = new Set();
+
+  for (let index = 0; index < lines.length; index++) {
+    const match = lines[index].match(/^#{2,4}\s+\[(.+?)\]\((.+?)\)/);
+    if (!match) continue;
+
+    let title = decodeEntities(match[1]).trim();
+    const link = match[2].trim();
+    if (!title || !link || seen.has(link)) continue;
+    seen.add(link);
+
+    let published = null;
+    const nearby = (lines[index + 1] || '') + ' ' + (lines[index + 2] || '');
+    const date = nearby.match(/(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
+    if (date) {
+      published = new Date(Date.UTC(+date[3], X_MONTHS[date[2]], +date[1], +date[4], +date[5], +date[6]));
+    }
+
+    if (source.stripsOutletSuffix) title = title.replace(/\s+-\s+[^-]+$/, '');
+
+    items.push({
+      id: source.id + '-' + stableHash(link),
+      title: title,
+      summary: '',
+      articleURL: link,
+      discussionURL: null,
+      sourceID: source.id,
+      sourceName: source.name,
+      category: source.category,
+      kind: 'rss',
+      publishedAt: published || new Date(),
+      points: 0,
+      commentCount: 0,
+      author: null
+    });
+  }
+
+  if (items.length === 0) throw new Error('Could not parse feed');
+  items.sort((a, b) => b.publishedAt - a.publishedAt);
+  return items.slice(0, 30);
+}
 async function loadRSSViaRSS2JSON(source) {
   const data = await fetchViaRSS2JSON(source.endpoint);
   const items = itemsFromRSS2JSON(data, source);
@@ -422,8 +482,28 @@ async function loadRSSViaRSS2JSON(source) {
 }
 
 async function loadRSSDirect(source) {
-  const items = parseFeed(await fetchText(source.endpoint), source);
-  lastGoodMethod[source.id] = 'direct';
+  let text = '';
+  try {
+    text = await fetchText(source.endpoint);
+  } catch (err) {
+    text = '';
+  }
+
+  if (text) {
+    try {
+      const items = parseFeed(text, source);
+      if (items.length) {
+        lastGoodMethod[source.id] = 'direct';
+        return items;
+      }
+    } catch (err) {
+      /* fall through to the reader */
+    }
+  }
+
+  const markdown = await fetchReader(source.endpoint);
+  const items = parseFeedMarkdown(markdown, source);
+  lastGoodMethod[source.id] = 'reader';
   return items;
 }
 
@@ -630,10 +710,41 @@ async function loadX() {
   return items;
 }
 
+/// Trending models on Hugging Face are the closest thing to a live release feed:
+/// every open model launch shows up here within hours.
+async function loadHFModels() {
+  const data = await fetchJSON('https://huggingface.co/api/models?sort=trendingScore&direction=-1&limit=40');
+  const cutoff = Date.now() - 14 * 24 * 60 * 60 * 1000;
+
+  return (Array.isArray(data) ? data : [])
+    .filter(model => model.id && new Date(model.createdAt || 0).getTime() > cutoff)
+    .map(model => {
+      const owner = model.id.split('/')[0];
+      const name = model.id.split('/').pop();
+      const task = (model.pipeline_tag || 'model').replace(/-/g, ' ');
+      return {
+        id: 'hfm-' + model.id,
+        title: name + ' — new ' + task + ' model',
+        summary: 'by ' + owner + ' · ' + compactCount(model.likes || 0) + ' likes · ' + compactCount(model.downloads || 0) + ' downloads',
+        articleURL: 'https://huggingface.co/' + model.id,
+        discussionURL: null,
+        sourceID: 'hf-models',
+        sourceName: 'HF New Models',
+        category: 'releases',
+        kind: 'release',
+        publishedAt: new Date(model.createdAt || Date.now()),
+        points: model.likes || 0,
+        commentCount: 0,
+        author: owner
+      };
+    });
+}
+
 async function loadSource(source) {
   if (source.kind === 'hn') return loadHN();
   if (source.kind === 'reddit') return loadReddit(source.endpoint);
   if (source.kind === 'hfPapers') return loadHFPapers();
+  if (source.kind === 'hfModels') return loadHFModels();
   if (source.kind === 'bluesky') return loadBluesky();
   if (source.kind === 'x') return loadX();
   return loadRSS(source);
@@ -1209,7 +1320,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.9';
+const APP_VERSION = '2026-10-28.10';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
