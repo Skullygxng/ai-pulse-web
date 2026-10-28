@@ -642,3 +642,129 @@ body {
 }
 
 .pull-hint.is-on { opacity: 1; }
+
+/* Video cards + in-app player */
+
+.video-thumb {
+  position: relative;
+  margin: 2px 0 9px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface-raised);
+  aspect-ratio: 16 / 9;
+}
+
+.video-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.play-badge {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.play-badge svg {
+  width: 18px;
+  height: 18px;
+  padding: 12px;
+  border-radius: 50%;
+  background: rgba(10, 12, 18, 0.72);
+  color: #fff;
+}
+
+.watch-ctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.watch-ctl svg { width: 11px; height: 11px; }
+
+.video-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: calc(env(safe-area-inset-top, 0px) + 16px) 14px calc(env(safe-area-inset-bottom, 0px) + 16px);
+  background: rgba(4, 6, 10, 0.94);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.video-sheet[hidden] { display: none; }
+
+.video-sheet-inner {
+  width: 100%;
+  max-width: 680px;
+  margin-top: 5vh;
+}
+
+.video-frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #000;
+}
+
+.video-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.video-meta h2 {
+  margin: 14px 0 4px;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--title);
+}
+
+.video-sub {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--tertiary);
+}
+
+.video-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.video-open,
+.video-close {
+  flex: 1;
+  text-align: center;
+  padding: 12px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.video-open {
+  background: var(--accent);
+  color: var(--on-accent);
+  text-decoration: none;
+}
+
+.video-close {
+  background: var(--surface);
+  color: var(--secondary);
+  border: 1px solid var(--hairline);
+  font-family: inherit;
+  cursor: pointer;
+}

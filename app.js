@@ -97,6 +97,8 @@ const ICON = {
   bluesky: ic('<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>'),
   x: ic('<path d="M4 4l16 16"/><path d="M20 4L4 20"/>'),
   release: ic('<path d="M12 2l2.4 6.2L21 10l-5 4.4L17.4 21 12 17.6 6.6 21 8 14.4 3 10l6.6-1.8z"/>'),
+  play: ic('<polygon points="8 5 19 12 8 19 8 5" fill="currentColor" stroke="none"/>'),
+  close: ic('<path d="M18 6L6 18"/><path d="M6 6l12 12"/>'),
   rss: ic('<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>'),
   youtube: ic('<polygon points="5 3 19 12 5 21 5 3"/>'),
   bookmark: ic('<path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>'),
@@ -1142,18 +1144,43 @@ function visibleItems() {
   return items;
 }
 
+function youtubeId(item) {
+  const match = (item.articleURL || '').match(/[?&]v=([\w-]{6,})/);
+  return match ? match[1] : '';
+}
+
 function cardHTML(item, isSavedCard) {
   const isRead = state.readIDs.has(item.id);
   const isSaved = state.savedIDs.has(item.id);
   const openURL = item.articleURL || item.discussionURL || '';
+  const videoID = item.kind === 'youtube' ? youtubeId(item) : '';
   const metrics = [];
   if (item.points > 0) metrics.push('<span class="metric">' + ICON.arrowUp + compactCount(item.points) + '</span>');
   if (item.commentCount > 0) metrics.push('<span class="metric">' + ICON.comment + compactCount(item.commentCount) + '</span>');
-  const discussion = item.discussionURL
+
+  const discussion = (!videoID && item.discussionURL)
     ? '<a class="discussion-ctl" href="' + escapeAttr(item.discussionURL) + '" target="_blank" rel="noopener">' + ICON.link + 'Discussion</a>'
     : '';
+
+  // Videos get a thumbnail and play in the app; their title is not a link, so a
+  // tap anywhere on the card plays instead of handing off to the YouTube app.
+  const thumb = videoID
+    ? '<div class="video-thumb"><img src="https://i.ytimg.com/vi/' + escapeAttr(videoID) +
+      '/hqdefault.jpg" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">' +
+      '<span class="play-badge" aria-hidden="true">' + ICON.play + '</span></div>'
+    : '';
+
+  const titleHTML = videoID
+    ? '<h3 class="card-title">' + escapeHtml(item.title) + '</h3>'
+    : '<h3 class="card-title"><a href="' + escapeAttr(openURL || '#') + '" target="_blank" rel="noopener">' + escapeHtml(item.title) + '</a></h3>';
+
+  const playCtl = videoID
+    ? '<span class="watch-ctl">' + ICON.play + 'Play</span>'
+    : '';
+
   return (
-    '<article class="card' + (isRead ? ' is-read' : '') + '" data-id="' + escapeAttr(item.id) + '" data-url="' + escapeAttr(openURL) + '">' +
+    '<article class="card' + (isRead ? ' is-read' : '') + (videoID ? ' is-video' : '') +
+      '" data-id="' + escapeAttr(item.id) + '" data-url="' + escapeAttr(openURL) + '" data-video="' + escapeAttr(videoID) + '">' +
       '<div class="card-head">' +
         '<span class="glyph glyph-' + item.category + '">' + (ICON[item.kind] || ICON.rss) + '</span>' +
         '<span class="card-source">' + escapeHtml(item.sourceName) + '</span>' +
@@ -1162,11 +1189,12 @@ function cardHTML(item, isSavedCard) {
         (isRead ? '' : '<span class="unread-dot"></span>') +
         '<button class="save-ctl' + (isSaved ? ' is-saved' : '') + '" data-id="' + escapeAttr(item.id) + '" title="' + (isSaved ? 'Remove from saved' : 'Save') + '" aria-label="' + (isSaved ? 'Remove from saved' : 'Save') + '">' + ICON.bookmark + '</button>' +
       '</div>' +
-      '<h3 class="card-title"><a href="' + escapeAttr(openURL || '#') + '" target="_blank" rel="noopener">' + escapeHtml(item.title) + '</a></h3>' +
+      thumb +
+      titleHTML +
       (item.summary ? '<p class="card-summary">' + escapeHtml(item.summary) + '</p>' : '') +
       '<div class="card-meta">' +
         '<span class="card-cat cat-' + item.category + '">' + CATEGORY_TITLES[item.category] + '</span>' +
-        metrics.join('') + discussion +
+        playCtl + metrics.join('') + discussion +
       '</div>' +
     '</article>'
   );
@@ -1329,6 +1357,18 @@ function handleCardClick(event) {
   }
   const card = event.target.closest('.card');
   if (!card) return;
+
+  // Video cards play inside the app; anything else opens the original page.
+  if (card.dataset.video) {
+    const item = findItem(card.dataset.id);
+    if (item) {
+      markRead(item.id);
+      renderAll();
+      openVideo(item);
+    }
+    return;
+  }
+
   if (event.target.closest('a')) {
     markRead(card.dataset.id);
     renderHeader();
@@ -1420,7 +1460,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.16';
+const APP_VERSION = '2026-10-28.17';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
@@ -1479,6 +1519,52 @@ if (updateBtn) {
     location.replace(url.toString());
   });
 }
+
+// MARK: - Video player
+
+const videoSheet = document.getElementById('video-sheet');
+const videoFrame = document.getElementById('video-frame');
+const videoTitle = document.getElementById('video-title');
+const videoSub = document.getElementById('video-sub');
+const videoOpen = document.getElementById('video-open');
+const videoCloseBtn = document.getElementById('video-close');
+
+function findItem(id) {
+  return state.items.find(item => item.id === id) || state.saved.find(item => item.id === id) || null;
+}
+
+function openVideo(item) {
+  const id = youtubeId(item);
+  if (!id) {
+    if (item.articleURL) window.open(item.articleURL, '_blank', 'noopener');
+    return;
+  }
+  if (!videoSheet || !videoFrame) return;
+
+  videoTitle.textContent = item.title;
+  videoSub.textContent = item.sourceName + ' · ' + pulseRelative(item.publishedAt);
+  videoOpen.href = item.articleURL || '#';
+  // The privacy-friendly embed keeps playback in the app instead of handing the
+  // link to the YouTube app.
+  videoFrame.src = 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&playsinline=1&rel=0&modestbranding=1';
+  videoSheet.hidden = false;
+}
+
+function closeVideo() {
+  if (!videoSheet) return;
+  videoSheet.hidden = true;
+  if (videoFrame) videoFrame.src = 'about:blank';
+}
+
+if (videoCloseBtn) videoCloseBtn.addEventListener('click', closeVideo);
+if (videoSheet) {
+  videoSheet.addEventListener('click', event => {
+    if (event.target === videoSheet) closeVideo();
+  });
+}
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && videoSheet && !videoSheet.hidden) closeVideo();
+});
 
 // MARK: - Start
 
