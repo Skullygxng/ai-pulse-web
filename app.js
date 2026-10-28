@@ -911,8 +911,71 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) bootstrap();
 });
 
+// MARK: - Updates
+
+// Bump this together with version.json whenever the site changes: a running
+// copy compares the two and offers a one-tap reload instead of going stale.
+const APP_VERSION = '2026-10-28.1';
+const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
+
+const updatePill = document.getElementById('update-pill');
+const updateBtn = document.getElementById('update-btn');
+
+function showUpdateNotice() {
+  if (updatePill) updatePill.hidden = false;
+}
+
+async function checkForUpdate() {
+  try {
+    const response = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!response.ok) return;
+    const data = await response.json();
+    if (data && data.version && data.version !== APP_VERSION) showUpdateNotice();
+  } catch (err) {
+    /* Offline — nothing to compare against. */
+  }
+}
+
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') return;
+
+  navigator.serviceWorker.register('sw.js', { scope: './' }).then(registration => {
+    registration.addEventListener('updatefound', () => {
+      const worker = registration.installing;
+      if (!worker) return;
+      worker.addEventListener('statechange', () => {
+        if (worker.state === 'installed' && navigator.serviceWorker.controller) showUpdateNotice();
+      });
+    });
+  }).catch(() => {});
+}
+
+function startUpdateWatcher() {
+  checkForUpdate();
+  setInterval(checkForUpdate, UPDATE_CHECK_INTERVAL);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) checkForUpdate();
+  });
+}
+
+if (updateBtn) {
+  updateBtn.addEventListener('click', () => {
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
+    }
+    // A cache-busting address guarantees the reload lands on the newest files,
+    // even on networks or service workers holding an older copy.
+    const url = new URL(location.href);
+    url.searchParams.set('v', String(Date.now()));
+    location.replace(url.toString());
+  });
+}
+
 // MARK: - Start
 
 restore();
 renderAll();
 bootstrap();
+startUpdateWatcher();
+registerServiceWorker();

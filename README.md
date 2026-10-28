@@ -24,6 +24,12 @@ Home Screen icons are captured when the shortcut is created, so an existing shor
 2. In the repository: Settings → Pages → Deploy from a branch → `main` / `(root)` → Save.
 3. The site goes live at `https://<owner>.github.io/<repo>/`.
 
+## Updates
+
+The site updates itself: there is nothing to delete or reinstall. A service worker fetches same-origin files from the network first (falling back to its cache offline), so opening the app always runs the newest deploy. A running copy also checks `version.json` on launch, when it returns to the foreground and every five minutes; if the site has moved on, a "A new version of AI Pulse is ready" pill appears with a Reload button.
+
+To ship a change, bump `version` in `version.json` and `APP_VERSION` in `app.js` together and push — GitHub Pages publishes it. Home Screen artwork is the one thing iOS fixes at install time, so a new icon still needs the shortcut removed and added again.
+
 ## How fetching works
 
 Browsers can only read responses from servers that allow cross-origin requests, so each source is tried over several paths: a direct request first, then public CORS proxies (AllOrigins, CodeTabs), then [RSS2JSON](https://rss2json.com/), which reads the feed server-side. The app remembers the path each source last succeeded with, tries that first, and gives a service that rate-limits a ten-minute rest. Every request is timed as a whole — including reading the body — so a stalled proxy can't hang a refresh. Reddit posts come from its JSON API when reachable and fall back to its RSS feed otherwise. A source that fails keeps its last stories instead of emptying the feed, and its error shows in the Sources tab.
