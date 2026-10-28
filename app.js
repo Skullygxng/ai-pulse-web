@@ -525,24 +525,53 @@ function cleanXLine(line) {
     .trim();
 }
 
+const X_MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+const X_DATE = /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\b/;
+
+/// The reader gives a profile page, so a post's date arrives as "Oct 23" next
+/// to the handle. Using it keeps old posts from resurfacing as if they were new.
+function xDateFromText(text) {
+  const match = text.match(X_DATE);
+  if (!match) return null;
+  const now = new Date();
+  const date = new Date(now.getFullYear(), X_MONTHS[match[1]], parseInt(match[2], 10), 12, 0, 0);
+  if (date.getTime() > now.getTime() + 86400000) date.setFullYear(date.getFullYear() - 1);
+  return date;
+}
+
+/// "Google DeepMind @GoogleDeepMind Oct 23 Using a single…" → "Using a single…"
+function xPostText(text) {
+  return text
+    .replace(/^(?:@\w+\s+)?.*?\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+/, '')
+    .replace(/^@\w+\s+/, '')
+    .trim();
+}
+
 function parseXProfile(markdown, handle) {
   const lines = markdown.split('\n');
-  const texts = [];
+  const posts = [];
   const skip = /^(pinned|who to follow|trends|most popular|last seen|people also)/i;
 
   for (const raw of lines) {
     const trimmed = raw.trim();
     if (!trimmed.startsWith('*')) continue;              // tweets arrive as bullets
-    const text = cleanXLine(trimmed.replace(/^\*\s*/, '')).replace(/^Image \d+:[^)]*/, '').trim();
-    if (text.length < 40 || skip.test(text)) continue;
-    texts.push(text.slice(0, 220));
+    const cleaned = cleanXLine(trimmed.replace(/^\*\s*/, '')).replace(/^Image \d+:[^)]*/, '').trim();
+    if (cleaned.length < 40 || skip.test(cleaned)) continue;
+
+    const text = xPostText(cleaned);
+    if (text.length < 30) continue;
+    posts.push({ text: text.slice(0, 220), date: xDateFromText(cleaned) });
   }
 
-  return Array.from(new Set(texts)).slice(0, 8).map(text => {
-    const id = 'x-' + handle.toLowerCase() + '-' + stableHash(text);
-    return {
-      id: id,
-      title: text,
+  const seen = new Set();
+  const items = [];
+  for (const post of posts) {
+    const key = stableHash(post.text);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push({
+      id: 'x-' + handle.toLowerCase() + '-' + key,
+      title: post.text,
       summary: '',
       articleURL: 'https://x.com/' + handle,
       discussionURL: 'https://x.com/' + handle,
@@ -550,12 +579,13 @@ function parseXProfile(markdown, handle) {
       sourceName: '@' + handle + ' · X',
       category: 'community',
       kind: 'x',
-      publishedAt: new Date(),
+      publishedAt: post.date || new Date(),
       points: 0,
       commentCount: 0,
       author: '@' + handle
-    };
-  });
+    });
+  }
+  return items.slice(0, 8);
 }
 
 async function fetchXAccount(handle) {
@@ -1049,7 +1079,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.6';
+const APP_VERSION = '2026-10-28.7';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
