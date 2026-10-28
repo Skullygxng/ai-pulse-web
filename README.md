@@ -14,7 +14,7 @@ Stories are de-duplicated across sources, ranked by freshness decayed over time 
 
 Open `index.html` in a browser, or serve the folder with any static file server. There is nothing to build.
 
-The logo lives in `icon.svg` (favicon and header mark source), `icon-mark.svg` (the header mark) and `icon-1024.png` (the raster icon Home Screens want — iOS ignores SVG for those). `manifest.webmanifest` makes the site installable as a standalone app.
+The logo lives in `icon.svg` (favicon and header mark source), `icon-mark.svg` (the header mark) and `apple-touch-icon.png` / `icon-1024.png` (the same 1024px raster, for Home Screens — iOS ignores SVG for those). `manifest.webmanifest` makes the site installable as a standalone app.
 
 Home Screen icons are captured when the shortcut is created, so an existing shortcut keeps its old artwork: delete it and use Share → Add to Home Screen again to pick up a new icon.
 
