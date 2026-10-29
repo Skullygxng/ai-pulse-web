@@ -11,7 +11,7 @@ The web version of AI Pulse: AI news, papers and community chatter from across t
 - **New releases** — Hugging Face's trending models API, which surfaces every open model launch within hours.
 - **Research** — Hugging Face Daily Papers, and arXiv cs.AI, cs.LG and cs.CL (the long-tail arXiv ones start off).
 
-Stories are de-duplicated across sources, ranked by freshness decayed over time and lifted by community engagement. Hacker News is fetched broadly and filtered to AI by topic keywords rather than by asking the API for the word "AI", so stories that phrase it differently still land in the feed. The list renders a screenful at a time and extends as you scroll, and pulling down at the top refreshes.
+Stories are de-duplicated across sources, ranked by freshness decayed over time and lifted by community engagement. Hacker News is fetched broadly and filtered to AI by topic keywords rather than by asking the API for the word "AI", so stories that phrase it differently still land in the feed — in two windows, so a minutes-old story with two votes is not buried until it has fifteen. The list renders a screenful at a time and extends as you scroll, pulling down at the top refreshes, and stories paint as each source lands.
 
 ## Running it
 

@@ -256,18 +256,29 @@ async function fetchJSON(url) {
 // MARK: - Source loaders
 
 async function loadHN() {
-  // Ask for everything popular in the window rather than for the literal word
-  // "AI", then keep the AI stories — otherwise "Anthropic ships Claude" or
-  // "diffusion model" get missed for not containing the keyword.
-  const since = Math.floor((Date.now() - 10 * 24 * 60 * 60 * 1000) / 1000);
-  const data = await fetchJSON(
-    'https://hn.algolia.com/api/v1/search_by_date?tags=story' +
-    '&numericFilters=created_at_i%3E' + since + '%2Cpoints%3E15&hitsPerPage=300'
-  );
-  const hits = (data.hits || [])
-    .filter(hit => hit.title && isAIRelevant(hit.title + ' ' + (hit.story_text || '')))
-    .slice(0, 80);
-  return hits.map(h => {
+  // Ask for everything rather than the literal word "AI", then keep the AI
+  // stories — otherwise "Anthropic ships Claude" or "diffusion model" get
+  // missed for not containing the keyword. And in two windows: a points
+  // filter alone would bury a minutes-old story (2 votes so far) for hours,
+  // which is exactly the "not updating with the latest news" feeling.
+  const base = 'https://hn.algolia.com/api/v1/search_by_date?tags=story&numericFilters=created_at_i%3E';
+  const dayAgo = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
+  const tenDaysAgo = Math.floor((Date.now() - 10 * 24 * 60 * 60 * 1000) / 1000);
+  const [popular, fresh] = await Promise.all([
+    fetchJSON(base + tenDaysAgo + '%2Cpoints%3E15&hitsPerPage=300'),
+    fetchJSON(base + dayAgo + '&hitsPerPage=300')
+  ]);
+  const seen = new Set();
+  const hits = [];
+  for (const batch of [fresh, popular]) {
+    for (const hit of (batch.hits || [])) {
+      if (!hit.title || seen.has(hit.objectID)) continue;
+      if (!isAIRelevant(hit.title + ' ' + (hit.story_text || ''))) continue;
+      seen.add(hit.objectID);
+      hits.push(hit);
+    }
+  }
+  return hits.slice(0, 100).map(h => {
     const discussion = 'https://news.ycombinator.com/item?id=' + h.objectID;
     const article = h.url && !h.url.startsWith('https://news.ycombinator.com') ? h.url : null;
     return {
@@ -1020,6 +1031,10 @@ function mergeSources(sources, results, previousBySource) {
   return { items: merged.slice(0, 600), status: refreshedStatus };
 }
 
+// Counted while a refresh runs so the header can show (done/total) instead of
+// looking stuck while the slow sources walk their fallback chains.
+let refreshProgress = null;
+
 async function refresh() {
   if (state.isRefreshing) return;
   state.isRefreshing = true;
@@ -1037,6 +1052,7 @@ async function refresh() {
 
   const results = new Map();
   let lastPaint = 0;
+  refreshProgress = { done: 0, total: sources.length };
 
   await Promise.all(sources.map(async (source, index) => {
     await delay(index * 120);
@@ -1047,6 +1063,7 @@ async function refresh() {
       result = { items: [], error: friendlyError(err) };
     }
     results.set(source.id, result);
+    refreshProgress.done = results.size;
 
     // Paint as each source lands, so the feed fills in instead of waiting for
     // the slowest one.
@@ -1066,6 +1083,7 @@ async function refresh() {
   state.status = merged.status;
   state.lastRefreshed = new Date();
   state.isRefreshing = false;
+  refreshProgress = null;
   pruneRead();
   persist();
   renderAll();
@@ -1284,7 +1302,12 @@ function renderHeader() {
   if (state.isRefreshing && state.items.length === 0) {
     updatedLine.textContent = 'Pulling the latest from your sources…';
   } else if (state.isRefreshing) {
-    updatedLine.textContent = 'Refreshing your sources…';
+    // Show where the refresh is and how old the feed is, so a long chain of
+    // fallbacks reads as progress rather than a frozen app.
+    const progress = refreshProgress ? ' (' + refreshProgress.done + '/' + refreshProgress.total + ')' : '';
+    const age = state.lastRefreshed ? pulseRelative(state.lastRefreshed) : null;
+    const ageText = age ? 'updated ' + (age === 'now' ? 'just now' : age + ' ago') : 'not refreshed yet';
+    updatedLine.textContent = 'Refreshing your sources' + progress + '… · ' + ageText;
   } else if (state.lastRefreshed) {
     const ok = SOURCES.filter(s => state.enabled.has(s.id) && !(state.status[s.id] && state.status[s.id].error)).length;
     const total = SOURCES.filter(s => state.enabled.has(s.id)).length;
@@ -1475,7 +1498,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.18';
+const APP_VERSION = '2026-10-28.19';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
