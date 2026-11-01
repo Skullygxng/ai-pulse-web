@@ -310,14 +310,14 @@ async function fetchResource(url, ms) {
 /// Direct first; a CORS-blocked or failed request falls back through public proxies.
 async function fetchText(url) {
   try {
-    const direct = await fetchResource(url, 4000);
+    const direct = await fetchResource(url, 2500);
     if (!direct.ok) throw new Error('HTTP ' + direct.status);
     return direct.body;
   } catch (directError) {
     let lastError = directError;
     for (const makeURL of PROXIES) {
       try {
-        const proxied = await fetchResource(makeURL(url), 6000);
+        const proxied = await fetchResource(makeURL(url), 4000);
         if (!proxied.ok) throw new Error('HTTP ' + proxied.status);
         return proxied.body;
       } catch (proxyError) {
@@ -332,7 +332,7 @@ async function fetchText(url) {
 /// can't reach. It returns the page as text, not as XML, so the caller parses
 /// whichever shape it got.
 async function fetchReader(url) {
-  const result = await fetchResource('https://r.jina.ai/' + url, 9000);
+  const result = await fetchResource('https://r.jina.ai/' + url, 7000);
   if (!result.ok || !result.body) throw new Error('Reader unavailable');
   return result.body;
 }
@@ -424,7 +424,7 @@ function rateLimitError(message) {
 
 async function fetchViaRSS2JSON(url) {
   if (Date.now() < rss2jsonCooldownUntil) throw new Error('RSS2JSON cooling down');
-  const result = await fetchResource('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(url), 8000);
+  const result = await fetchResource('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(url), 6000);
   if (result.status === 403 || result.status === 429 || result.status === 466) {
     rss2jsonCooldownUntil = Date.now() + 10 * 60 * 1000;
     throw rateLimitError('RSS2JSON rate limited (HTTP ' + result.status + ')');
@@ -692,7 +692,7 @@ async function loadYoutubeFromInvidious(source) {
 
 /// The nine channels fire together, and the services in their chain
 /// rate-limit bursts, so each channel starts slightly after the last.
-const YOUTUBE_STAGGER = new Map(SOURCES.filter(s => s.kind === 'youtube').map((s, i) => [s.id, i * 700]));
+const YOUTUBE_STAGGER = new Map(SOURCES.filter(s => s.kind === 'youtube').map((s, i) => [s.id, i * 250]));
 
 function loadYoutube(source) {
   const wait = YOUTUBE_STAGGER.get(source.id) || 0;
@@ -1081,7 +1081,7 @@ function pruneRead() {
 // instead of dragging the whole refresh out for minutes. Underneath, a source
 // still walks direct → proxies → reader → RSS2JSON; the budget just stops
 // giving it more time than that.
-const SOURCE_BUDGET_MS = 16000;
+const SOURCE_BUDGET_MS = 10000;
 
 function withBudget(promise) {
   return new Promise((resolve, reject) => {
@@ -1151,6 +1151,14 @@ function mergeSources(sources, results, previousBySource) {
 // looking stuck while the slow sources walk their fallback chains.
 let refreshProgress = null;
 
+// Once the useful sources have landed the refresh is wrapped up, and any source
+// still walking its fallback chain is folded in quietly afterwards.
+const REFRESH_SETTLE_MS = 6000;
+
+// Only one refresh owns the state at a time; a late source from an older run
+// must not overwrite newer results.
+let activeRun = null;
+
 async function refresh() {
   if (state.isRefreshing) return;
   state.isRefreshing = true;
@@ -1167,11 +1175,32 @@ async function refresh() {
   }
 
   const results = new Map();
+  const run = { finished: false };
+  activeRun = run;
   let lastPaint = 0;
+
   refreshProgress = { done: 0, total: sources.length };
 
-  await Promise.all(sources.map(async (source, index) => {
-    await delay(index * 120);
+  function applyResults() {
+    const merged = mergeSources(sources, results, previousBySource);
+    state.items = merged.items;
+    state.status = merged.status;
+  }
+
+  function finish() {
+    if (run.finished || activeRun !== run) return;
+    run.finished = true;
+    applyResults();
+    state.lastRefreshed = new Date();
+    state.isRefreshing = false;
+    refreshProgress = null;
+    pruneRead();
+    persist();
+    renderAll();
+  }
+
+  const tasks = sources.map(async (source, index) => {
+    await delay(index * 80);
     let result;
     if (Date.now() < (sourceCooldownUntil[source.id] || 0)) {
       result = { items: [], error: null, skipped: true };
@@ -1186,31 +1215,33 @@ async function refresh() {
         }
       }
     }
+
+    if (activeRun !== run) return;            // a newer refresh took over
     results.set(source.id, result);
-    refreshProgress.done = results.size;
+    if (refreshProgress) refreshProgress.done = results.size;
+
+    if (run.finished) {
+      // A straggler landed after the refresh was wrapped up: fold it in quietly.
+      applyResults();
+      renderHeader();
+      if (state.view === 'feed') renderFeed();
+      else if (state.view === 'today') renderToday();
+      return;
+    }
 
     // Paint as each source lands, so the feed fills in instead of waiting for
     // the slowest one.
     const now = Date.now();
-    if (now - lastPaint > 400) {
+    if (now - lastPaint > 600) {
       lastPaint = now;
-      const merged = mergeSources(sources, results, previousBySource);
-      state.items = merged.items;
-      state.status = merged.status;
+      applyResults();
       renderHeader();
       renderFeed();
     }
-  }));
+  });
 
-  const merged = mergeSources(sources, results, previousBySource);
-  state.items = merged.items;
-  state.status = merged.status;
-  state.lastRefreshed = new Date();
-  state.isRefreshing = false;
-  refreshProgress = null;
-  pruneRead();
-  persist();
-  renderAll();
+  const all = Promise.all(tasks).then(finish);
+  await Promise.race([all, delay(REFRESH_SETTLE_MS).then(finish)]);
 }
 
 async function bootstrap() {
@@ -1384,9 +1415,10 @@ function renderFeed() {
       '</p></div>';
     return;
   }
-  // Only a screenful or two goes into the DOM at a time; more is appended as
-  // the reader scrolls, which keeps the first paint quick.
-  const shown = items.slice(0, state.renderLimit);
+  // While a refresh is filling the feed only the first screenful is rebuilt, so
+  // each progressive paint stays cheap.
+  const cap = state.isRefreshing ? Math.min(state.renderLimit, 30) : state.renderLimit;
+  const shown = items.slice(0, cap);
   let html = shown.map(item => cardHTML(item, false)).join('');
   if (items.length > shown.length) {
     html += '<button class="load-more" type="button">Show more stories</button>';
@@ -1797,7 +1829,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.24';
+const APP_VERSION = '2026-10-28.25';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
