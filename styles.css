@@ -829,6 +829,12 @@ body {
 
 .today-list { gap: 8px; }
 
+.today-none {
+  margin: 0 4px;
+  font-size: 13px;
+  color: var(--tertiary);
+}
+
 .today-row {
   padding: 10px 13px;
 }

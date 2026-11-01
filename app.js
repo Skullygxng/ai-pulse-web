@@ -1356,9 +1356,10 @@ function todayRowsHTML(items) {
 }
 
 function todaySection(title, items) {
-  if (!items.length) return '';
   return '<h2 class="today-section">' + escapeHtml(title) + '</h2>' +
-    '<div class="list today-list">' + todayRowsHTML(items) + '</div>';
+    (items.length
+      ? '<div class="list today-list">' + todayRowsHTML(items) + '</div>'
+      : '<p class="today-none">Nothing new in the last 24 hours.</p>');
 }
 
 function renderToday() {
@@ -1593,7 +1594,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.20';
+const APP_VERSION = '2026-10-28.21';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
