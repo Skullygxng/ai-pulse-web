@@ -1158,6 +1158,7 @@ const REFRESH_SETTLE_MS = 6000;
 // Only one refresh owns the state at a time; a late source from an older run
 // must not overwrite newer results.
 let activeRun = null;
+let latePersistTimer = null;
 
 async function refresh() {
   if (state.isRefreshing) return;
@@ -1226,6 +1227,10 @@ async function refresh() {
       renderHeader();
       if (state.view === 'feed') renderFeed();
       else if (state.view === 'today') renderToday();
+      // Save once the stragglers stop arriving, so their stories survive a reload.
+      if (!latePersistTimer) {
+        latePersistTimer = setTimeout(() => { latePersistTimer = null; persist(); }, 3000);
+      }
       return;
     }
 
