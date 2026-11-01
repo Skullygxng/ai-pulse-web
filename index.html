@@ -14,7 +14,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="AI Pulse">
-  <link rel="stylesheet" href="styles.css?v=7">
+  <link rel="stylesheet" href="styles.css?v=8">
 </head>
 <body>
   <div class="update-pill" id="update-pill" hidden>
@@ -49,7 +49,10 @@
           <img class="brand-mark" src="icon-mark.svg" alt="" width="28" height="28">
           <h1>AI Pulse</h1>
         </div>
-        <button id="refresh-btn" class="icon-btn" title="Refresh sources" aria-label="Refresh sources"></button>
+        <div class="head-actions">
+          <button id="today-btn" class="icon-btn" title="Today's briefing" aria-label="Today's briefing"></button>
+          <button id="refresh-btn" class="icon-btn" title="Refresh sources" aria-label="Refresh sources"></button>
+        </div>
       </div>
       <p class="updated-line" id="updated-line"></p>
     </header>
@@ -87,6 +90,10 @@
       <div id="feed-list" class="list"></div>
     </section>
 
+    <section id="view-today" class="view">
+      <div id="today-content"></div>
+    </section>
+
     <section id="view-saved" class="view">
       <div id="saved-list" class="list"></div>
     </section>
@@ -98,6 +105,6 @@
     </section>
 
   </div>
-  <script src="app.js?v=24"></script>
+  <script src="app.js?v=25"></script>
 </body>
 </html>

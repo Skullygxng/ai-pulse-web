@@ -106,7 +106,8 @@ const ICON = {
   comment: ic('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'),
   link: ic('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
   refresh: ic('<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>'),
-  search: ic('<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>')
+  search: ic('<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>'),
+  sun: ic('<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>')
 };
 
 // MARK: - Text helpers
@@ -928,6 +929,7 @@ const state = {
   sort: 'forYou',
   query: '',
   view: 'feed',
+  lastView: null,
   renderLimit: 30,
   visibleCount: 0
 };
@@ -1145,6 +1147,8 @@ const searchInput = document.getElementById('search-input');
 const refreshBtn = document.getElementById('refresh-btn');
 const updatedLine = document.getElementById('updated-line');
 const savedCount = document.getElementById('saved-count');
+const todayContent = document.getElementById('today-content');
+const todayBtn = document.getElementById('today-btn');
 
 function visibleItems() {
   const items = state.items.filter(item => {
@@ -1299,6 +1303,9 @@ function renderSources() {
 function renderHeader() {
   refreshBtn.classList.toggle('is-busy', state.isRefreshing);
   refreshBtn.innerHTML = ICON.refresh;
+  todayBtn.innerHTML = ICON.sun;
+  todayBtn.classList.toggle('is-active', state.view === 'today');
+  todayBtn.title = state.view === 'today' ? 'Back to the feed' : "Today's briefing";
   if (state.isRefreshing && state.items.length === 0) {
     updatedLine.textContent = 'Pulling the latest from your sources…';
   } else if (state.isRefreshing) {
@@ -1324,6 +1331,76 @@ function renderHeader() {
   }
 }
 
+// MARK: - Today briefing
+
+function todayRowsHTML(items) {
+  return items.map(item => {
+    const isRead = state.readIDs.has(item.id);
+    const isVideo = isVideoItem(item);
+    return (
+      '<article class="card today-row' + (isRead ? ' is-read' : '') + '" data-id="' + escapeAttr(item.id) +
+        '" data-url="' + escapeAttr(item.articleURL || item.discussionURL || '') + '"' + (isVideo ? ' data-video="1"' : '') + '>' +
+        '<div class="today-row-top">' +
+          '<span class="glyph glyph-' + item.category + '">' + (ICON[item.kind] || ICON.rss) + '</span>' +
+          '<h3 class="today-row-title">' + escapeHtml(item.title) + '</h3>' +
+        '</div>' +
+        '<div class="today-row-meta">' +
+          '<span class="card-source">' + escapeHtml(item.sourceName) + '</span>' +
+          '<span class="dot-sep">·</span>' +
+          '<span class="card-age">' + pulseRelative(item.publishedAt) + '</span>' +
+          (item.points > 0 ? '<span class="metric">' + ICON.arrowUp + compactCount(item.points) + '</span>' : '') +
+        '</div>' +
+      '</article>'
+    );
+  }).join('');
+}
+
+function todaySection(title, items) {
+  if (!items.length) return '';
+  return '<h2 class="today-section">' + escapeHtml(title) + '</h2>' +
+    '<div class="list today-list">' + todayRowsHTML(items) + '</div>';
+}
+
+function renderToday() {
+  const now = new Date();
+  const cut = now.getTime() - 24 * 60 * 60 * 1000;
+  const fresh = state.items.filter(item => item.publishedAt.getTime() >= cut);
+
+  if (!fresh.length) {
+    todayContent.innerHTML =
+      '<div class="empty"><h2>Nothing for today yet</h2>' +
+      '<p>Pull down to refresh — the briefing builds from the last 24 hours.</p></div>';
+    return;
+  }
+
+  const ranked = fresh.slice().sort((a, b) => score(b, now) - score(a, now));
+  const mustRead = ranked[0];
+  const used = new Set([mustRead.id]);
+
+  function top(category) {
+    const rows = [];
+    for (const item of ranked) {
+      if (rows.length >= 3) break;
+      if (used.has(item.id) || item.category !== category) continue;
+      rows.push(item);
+    }
+    rows.forEach(item => used.add(item.id));
+    return rows;
+  }
+
+  const dateStr = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+
+  todayContent.innerHTML =
+    '<div class="today-head"><h2 class="today-date">' + dateStr + '</h2>' +
+      '<p class="today-sub">' + fresh.length + ' stories from the last 24 hours</p></div>' +
+    '<p class="today-label">Must read</p>' +
+    cardHTML(mustRead).replace('class="card"', 'class="card must-read"') +
+    todaySection('Community is talking about', top('community')) +
+    todaySection('From the labs', top('news')) +
+    todaySection('New research', top('research')) +
+    '<button id="open-feed-btn" class="today-open" type="button">Open the full feed</button>';
+}
+
 function renderAll() {
   document.querySelectorAll('.view-tab').forEach(tab => {
     tab.classList.toggle('is-active', tab.dataset.view === state.view);
@@ -1347,6 +1424,7 @@ function renderAll() {
   // Only the visible list is rebuilt; the others are built when they're opened.
   if (state.view === 'feed') renderFeed();
   else if (state.view === 'saved') renderSaved();
+  else if (state.view === 'today') renderToday();
   else renderSources();
 }
 
@@ -1409,9 +1487,7 @@ function handleCardClick(event) {
 
   if (event.target.closest('a')) {
     markRead(card.dataset.id);
-    renderHeader();
-    renderFeed();
-    renderSaved();
+    renderAll();
     return;
   }
   const url = card.dataset.url;
@@ -1424,6 +1500,25 @@ function handleCardClick(event) {
 
 feedList.addEventListener('click', handleCardClick);
 savedList.addEventListener('click', handleCardClick);
+
+todayContent.addEventListener('click', event => {
+  if (event.target.closest('#open-feed-btn')) {
+    state.view = state.lastView && state.lastView !== 'today' ? state.lastView : 'feed';
+    renderAll();
+    return;
+  }
+  handleCardClick(event);
+});
+
+todayBtn.addEventListener('click', () => {
+  if (state.view === 'today') {
+    state.view = state.lastView && state.lastView !== 'today' ? state.lastView : 'feed';
+  } else {
+    state.lastView = state.view;
+    state.view = 'today';
+  }
+  renderAll();
+});
 
 // Only the first page of stories is in the DOM, so both ways of asking for more
 // just extend it.
@@ -1498,7 +1593,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.19';
+const APP_VERSION = '2026-10-28.20';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
