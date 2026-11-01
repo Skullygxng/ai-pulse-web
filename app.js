@@ -230,7 +230,7 @@ async function fetchText(url) {
     let lastError = directError;
     for (const makeURL of PROXIES) {
       try {
-        const proxied = await fetchResource(makeURL(url), 7000);
+        const proxied = await fetchResource(makeURL(url), 6000);
         if (!proxied.ok) throw new Error('HTTP ' + proxied.status);
         return proxied.body;
       } catch (proxyError) {
@@ -245,7 +245,7 @@ async function fetchText(url) {
 /// can't reach. It returns the page as text, not as XML, so the caller parses
 /// whichever shape it got.
 async function fetchReader(url) {
-  const result = await fetchResource('https://r.jina.ai/' + url, 12000);
+  const result = await fetchResource('https://r.jina.ai/' + url, 9000);
   if (!result.ok || !result.body) throw new Error('Reader unavailable');
   return result.body;
 }
@@ -337,7 +337,7 @@ function rateLimitError(message) {
 
 async function fetchViaRSS2JSON(url) {
   if (Date.now() < rss2jsonCooldownUntil) throw new Error('RSS2JSON cooling down');
-  const result = await fetchResource('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(url), 12000);
+  const result = await fetchResource('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(url), 8000);
   if (result.status === 403 || result.status === 429 || result.status === 466) {
     rss2jsonCooldownUntil = Date.now() + 10 * 60 * 1000;
     throw rateLimitError('RSS2JSON rate limited (HTTP ' + result.status + ')');
@@ -984,6 +984,22 @@ function pruneRead() {
 
 // MARK: - Refresh
 
+// A hard cap per source: one whose every route hangs fails after 16 seconds
+// instead of dragging the whole refresh out for minutes. Underneath, a source
+// still walks direct → proxies → reader → RSS2JSON; the budget just stops
+// giving it more time than that.
+const SOURCE_BUDGET_MS = 16000;
+
+function withBudget(promise) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Timed out')), SOURCE_BUDGET_MS);
+    promise.then(
+      value => { clearTimeout(timer); resolve(value); },
+      err => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
 // Fast, dependable sources paint first; Reddit and the X scrape come last.
 const SOURCE_PRIORITY = { hn: 0, hfPapers: 0, hfModels: 0, bluesky: 1, rss: 2, youtube: 2, reddit: 3, x: 4 };
 
@@ -1060,7 +1076,7 @@ async function refresh() {
     await delay(index * 120);
     let result;
     try {
-      result = { items: await loadSource(source), error: null };
+      result = { items: await withBudget(loadSource(source)), error: null };
     } catch (err) {
       result = { items: [], error: friendlyError(err) };
     }
@@ -1594,7 +1610,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.21';
+const APP_VERSION = '2026-10-28.22';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
