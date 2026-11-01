@@ -203,6 +203,11 @@ function isAIRelevant(title) {
 // so the next refresh tries that first instead of re-failing the worse one.
 const lastGoodMethod = {};
 
+// A source that just failed on a network-level error (blocked host, dead
+// proxy) rests for a few minutes instead of burning its whole budget again
+// on every refresh. It retries on a later refresh.
+const sourceCooldownUntil = {};
+
 // RSS2JSON's free tier rate-limits per IP. When it does, stop hitting it
 // for a while and let sources use the proxy chain instead.
 let rss2jsonCooldownUntil = 0;
@@ -1021,6 +1026,11 @@ function mergeSources(sources, results, previousBySource) {
     if (result && !result.error) {
       sourceItems = result.items;
       refreshedStatus[source.id] = { count: result.items.length, error: null, updatedAt: now.toISOString() };
+    } else if (result && result.skipped) {
+      // Resting after a recent network-level timeout: quietly keep showing
+      // what this source had. It retries on a later refresh.
+      sourceItems = previousBySource[source.id] || [];
+      refreshedStatus[source.id] = state.status[source.id] || { count: sourceItems.length, error: null, updatedAt: null };
     } else if (result) {
       // A source that fails keeps what it had, so a flaky request never empties the feed.
       sourceItems = previousBySource[source.id] || [];
@@ -1075,10 +1085,18 @@ async function refresh() {
   await Promise.all(sources.map(async (source, index) => {
     await delay(index * 120);
     let result;
-    try {
-      result = { items: await withBudget(loadSource(source)), error: null };
-    } catch (err) {
-      result = { items: [], error: friendlyError(err) };
+    if (Date.now() < (sourceCooldownUntil[source.id] || 0)) {
+      result = { items: [], error: null, skipped: true };
+    } else {
+      try {
+        result = { items: await withBudget(loadSource(source)), error: null };
+      } catch (err) {
+        result = { items: [], error: friendlyError(err) };
+        const message = result.error;
+        if (message === 'Timed out' || message === 'Network error' || message === 'Could not load') {
+          sourceCooldownUntil[source.id] = Date.now() + 5 * 60 * 1000;
+        }
+      }
     }
     results.set(source.id, result);
     refreshProgress.done = results.size;
@@ -1610,7 +1628,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.22';
+const APP_VERSION = '2026-10-28.23';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');
