@@ -55,6 +55,87 @@ const SOURCES = [
 
 const CATEGORIES = ['community', 'news', 'videos', 'underground', 'releases', 'research'];
 const CATEGORY_TITLES = { community: 'Community', news: 'News', videos: 'Videos', underground: 'Underground', releases: 'New releases', research: 'Research' };
+
+/// The subjects a reader can follow. Each maps to keywords checked against a
+/// story's title and summary; several can be followed at once.
+const TOPICS = [
+  {
+    id: 'models',
+    name: 'Models',
+    blurb: 'New models, releases and the people building them',
+    keywords: ['model', 'models', 'llm', 'llms', 'gpt', 'claude', 'gemini', 'llama', 'mistral',
+      'deepseek', 'qwen', 'weights', 'checkpoint', 'parameters', 'context window', 'fine-tune',
+      'finetuned', 'distillation', 'mixture of experts', 'open-weight', 'multimodal']
+  },
+  {
+    id: 'agents',
+    name: 'Agents',
+    blurb: 'Tools that act on their own — and how they fail',
+    keywords: ['agent', 'agents', 'agentic', 'tool use', 'tool calling', 'autonomous', 'workflow',
+      'rag', 'retrieval', 'orchestration', 'mcp', 'computer use', 'browser agent', 'multi-agent']
+  },
+  {
+    id: 'chips',
+    name: 'Chips',
+    blurb: 'GPUs, data centres and the compute race',
+    keywords: ['chip', 'chips', 'gpu', 'gpus', 'h100', 'b200', 'tpu', 'silicon', 'wafer', 'nvidia',
+      'amd', 'tsmc', 'data center', 'data centre', 'fab', 'accelerator', 'cuda', 'asic', 'inference chip']
+  },
+  {
+    id: 'policy',
+    name: 'Policy',
+    blurb: 'Regulation, lawsuits and government moves',
+    keywords: ['policy', 'regulation', 'regulate', 'law', 'laws', 'eu ai act', 'congress', 'senate',
+      'white house', 'executive order', 'court', 'lawsuit', 'copyright', 'ban', 'antitrust',
+      'government', 'legislation', 'compliance']
+  },
+  {
+    id: 'safety',
+    name: 'Safety',
+    blurb: 'Alignment, risk and how models misbehave',
+    keywords: ['safety', 'alignment', 'existential', 'misuse', 'jailbreak', 'red team', 'red-teaming',
+      'interpretability', 'supervision', 'guardrail', 'guardrails', 'harm', 'catastrophic', 'corrigibility']
+  },
+  {
+    id: 'research',
+    name: 'Research',
+    blurb: 'Papers, benchmarks and what the studies found',
+    keywords: ['paper', 'papers', 'arxiv', 'study', 'benchmark', 'evaluation', 'sota', 'dataset',
+      'experiment', 'researchers', 'findings', 'state of the art', 'ablation']
+  },
+  {
+    id: 'opensource',
+    name: 'Open source',
+    blurb: 'Open weights, repos and the community building them',
+    keywords: ['open source', 'open-source', 'open weight', 'open weights', 'apache 2', 'mit license',
+      'github', 'huggingface', 'weights released', 'open model', 'open models', 'open-source model']
+  },
+  {
+    id: 'apps',
+    name: 'Apps',
+    blurb: 'Products, tools and the apps that ship them',
+    keywords: ['app', 'apps', 'tool', 'tools', 'startup', 'product', 'launch', 'launches', 'api',
+      'plugin', 'saas', 'assistant', 'chatbot', 'ide', 'coding assistant', 'chrome extension', 'no-code']
+  }
+];
+
+function topicMatches(item, topic) {
+  const text = (item.title + ' ' + (item.summary || '')).toLowerCase();
+  const words = new Set(text.split(/[^a-z0-9+]+/).filter(Boolean));
+  return topic.keywords.some(keyword => {
+    if (keyword.indexOf(' ') !== -1 || keyword.indexOf('-') !== -1) return text.indexOf(keyword) !== -1;
+    return words.has(keyword);
+  });
+}
+
+/// The first followed topic a story belongs to, for the label on its card.
+function followedTopicFor(item) {
+  for (const id of state.topics) {
+    const topic = TOPICS.find(entry => entry.id === id);
+    if (topic && topicMatches(item, topic)) return topic;
+  }
+  return null;
+}
 const PROXIES = [
   url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
   url => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url)
@@ -107,6 +188,7 @@ const ICON = {
   link: ic('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
   refresh: ic('<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>'),
   search: ic('<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>'),
+  tag: ic('<path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0l-7.2-7.2a2 2 0 0 1-.6-1.4V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.4 7.4a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.2"/>'),
   sun: ic('<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>')
 };
 
@@ -936,7 +1018,9 @@ const state = {
   view: 'feed',
   lastView: null,
   renderLimit: 30,
-  visibleCount: 0
+  visibleCount: 0,
+  topics: [],
+  topic: null
 };
 
 function persist() {
@@ -945,6 +1029,7 @@ function persist() {
     saved: state.saved.map(item => Object.assign({}, item, { publishedAt: item.publishedAt.toISOString() })),
     readIDs: Array.from(state.readIDs),
     enabled: Array.from(state.enabled),
+    topics: state.topics,
     known: SOURCES.map(s => s.id),
     status: state.status,
     methods: lastGoodMethod,
@@ -970,6 +1055,9 @@ function restore() {
       if (!known.has(id)) state.enabled.add(id);
     }
     state.status = data.status || {};
+    state.topics = Array.isArray(data.topics)
+      ? data.topics.filter(id => TOPICS.some(topic => topic.id === id))
+      : [];
     Object.assign(lastGoodMethod, data.methods || {});
     state.lastRefreshed = data.lastRefreshed ? new Date(data.lastRefreshed) : null;
   } catch (e) { /* a broken snapshot just means a fresh start */ }
@@ -1183,10 +1271,13 @@ const updatedLine = document.getElementById('updated-line');
 const savedCount = document.getElementById('saved-count');
 const todayContent = document.getElementById('today-content');
 const todayBtn = document.getElementById('today-btn');
+const topicChips = document.getElementById('topic-chips');
 
 function visibleItems() {
+  const activeTopic = state.topic ? TOPICS.find(topic => topic.id === state.topic) : null;
   const items = state.items.filter(item => {
     if (state.filter !== 'all' && item.category !== state.filter) return false;
+    if (activeTopic && !topicMatches(item, activeTopic)) return false;
     return matchesQuery(item, state.query);
   });
   if (state.sort === 'latest') {
@@ -1247,6 +1338,11 @@ function cardHTML(item, isSavedCard) {
     ? '<span class="watch-ctl">' + ICON.play + 'Play</span>'
     : '';
 
+  const followedTopic = followedTopicFor(item);
+  const topicTag = followedTopic
+    ? '<span class="topic-tag">' + escapeHtml(followedTopic.name) + '</span>'
+    : '';
+
   return (
     '<article class="card' + (isRead ? ' is-read' : '') + (isVideo ? ' is-video' : '') +
       '" data-id="' + escapeAttr(item.id) + '" data-url="' + escapeAttr(openURL) +
@@ -1264,7 +1360,7 @@ function cardHTML(item, isSavedCard) {
       (item.summary ? '<p class="card-summary">' + escapeHtml(item.summary) + '</p>' : '') +
       '<div class="card-meta">' +
         '<span class="card-cat cat-' + item.category + '">' + CATEGORY_TITLES[item.category] + '</span>' +
-        playCtl + metrics.join('') + discussion +
+        topicTag + playCtl + metrics.join('') + discussion +
       '</div>' +
     '</article>'
   );
@@ -1306,6 +1402,59 @@ function renderSaved() {
   savedList.innerHTML = state.saved.map(item => cardHTML(item, true)).join('');
 }
 
+function renderTopicChips() {
+  if (!topicChips) return;
+
+  const followed = state.topics
+    .map(id => TOPICS.find(topic => topic.id === id))
+    .filter(Boolean);
+
+  if (!followed.length) {
+    topicChips.hidden = true;
+    topicChips.innerHTML = '';
+    return;
+  }
+
+  topicChips.hidden = false;
+  topicChips.innerHTML = followed.map(topic => {
+    const on = state.topic === topic.id;
+    return '<button class="chip topic-chip' + (on ? ' is-active' : '') + '" type="button" data-topic-chip="' +
+      escapeAttr(topic.id) + '" aria-pressed="' + (on ? 'true' : 'false') + '">' +
+      '<span class="topic-dot" aria-hidden="true"></span>' + escapeHtml(topic.name) + '</button>';
+  }).join('');
+}
+
+function setTopicEnabled(topicID, isEnabled) {
+  if (isEnabled) {
+    if (!state.topics.includes(topicID)) state.topics.push(topicID);
+  } else {
+    state.topics = state.topics.filter(id => id !== topicID);
+    if (state.topic === topicID) state.topic = null;
+  }
+  state.renderLimit = 30;
+  persist();
+  renderAll();
+}
+
+function topicRowHTML(topic) {
+  const on = state.topics.includes(topic.id);
+  return (
+    '<div class="source-row' + (on ? '' : ' is-off') + '">' +
+      '<div class="source-info">' +
+        '<div class="source-name"><span class="glyph glyph-topic">' + ICON.tag + '</span>' + escapeHtml(topic.name) + '</div>' +
+        '<div class="source-sub">' + escapeHtml(topic.blurb) + '</div>' +
+      '</div>' +
+      '<label class="switch"><input type="checkbox" data-topic="' + escapeAttr(topic.id) + '"' + (on ? ' checked' : '') + '><span class="knob"></span></label>' +
+    '</div>'
+  );
+}
+
+function topicsSectionHTML() {
+  return '<h2 class="source-group">Topics</h2>' +
+    '<p class="topics-note">Pick what you care about. Each becomes a chip under the filters, and matching stories get labelled.</p>' +
+    TOPICS.map(topicRowHTML).join('');
+}
+
 function renderSources() {
   sourcesList.innerHTML = CATEGORIES.map(category => {
     const rows = SOURCES.filter(s => s.category === category).map(source => {
@@ -1332,6 +1481,8 @@ function renderSources() {
     }).join('');
     return '<h2 class="source-group">' + CATEGORY_TITLES[category] + '</h2>' + rows;
   }).join('');
+
+  sourcesList.innerHTML = topicsSectionHTML() + sourcesList.innerHTML;
 }
 
 function renderHeader() {
@@ -1455,6 +1606,7 @@ function renderAll() {
   });
   if (searchInput.value !== state.query) searchInput.value = state.query;
 
+  renderTopicChips();
   renderHeader();
   // Only the visible list is rebuilt; the others are built when they're opened.
   if (state.view === 'feed') renderFeed();
@@ -1479,6 +1631,17 @@ document.getElementById('filter-chips').addEventListener('click', event => {
   state.renderLimit = 30;
   renderAll();
 });
+
+if (topicChips) {
+  topicChips.addEventListener('click', event => {
+    const chip = event.target.closest('[data-topic-chip]');
+    if (!chip) return;
+    const id = chip.dataset.topicChip;
+    state.topic = state.topic === id ? null : id;
+    state.renderLimit = 30;
+    renderAll();
+  });
+}
 
 document.getElementById('sort-seg').addEventListener('click', event => {
   const button = event.target.closest('.seg-btn');
@@ -1620,6 +1783,12 @@ sourcesList.addEventListener('change', event => {
   setSourceEnabled(input.dataset.source, input.checked);
 });
 
+sourcesList.addEventListener('change', event => {
+  const input = event.target.closest('input[data-topic]');
+  if (!input) return;
+  setTopicEnabled(input.dataset.topic, input.checked);
+});
+
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) bootstrap();
 });
@@ -1628,7 +1797,7 @@ document.addEventListener('visibilitychange', () => {
 
 // Bump this together with version.json whenever the site changes: a running
 // copy compares the two and offers a one-tap reload instead of going stale.
-const APP_VERSION = '2026-10-28.23';
+const APP_VERSION = '2026-10-28.24';
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000;
 
 const updatePill = document.getElementById('update-pill');

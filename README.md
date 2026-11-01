@@ -13,6 +13,8 @@ The web version of AI Pulse: AI news, papers and community chatter from across t
 
 Stories are de-duplicated across sources, ranked by freshness decayed over time and lifted by community engagement. Hacker News is fetched broadly and filtered to AI by topic keywords rather than by asking the API for the word "AI", so stories that phrase it differently still land in the feed — in two windows, so a minutes-old story with two votes is not buried until it has fifteen. The list renders a screenful at a time and extends as you scroll, pulling down at the top refreshes, and stories paint as each source lands.
 
+You can follow topics — Models, Agents, Chips, Policy, Safety, Research, Open source and Apps — from the Sources tab. Each followed topic becomes a chip under the category filters that narrows the feed to that subject, and stories matching one carry its label on the card.
+
 ## Running it
 
 Open `index.html` in a browser, or serve the folder with any static file server. There is nothing to build.
